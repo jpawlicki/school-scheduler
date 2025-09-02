@@ -2,11 +2,35 @@
   <head>
     <!-- TODO: favicon -->
     <style>
+      body {
+        margin: 0;
+        font-family: "Lato", sans-serif;
+        display: grid;
+        grid-template-columns: 1fr 20em;
+      }
+      tabbed-panel > div > extensible-list {
+        color: #ccc;
+      }
     </style>
-    <!-- TODO: custom element includes -->
+    <script src="elements/tabbed-panel.js" type="module"></script>
+    <script src="elements/extensible-list.js" type="module"></script>
   </head>
   <body>
-    <!-- TODO: main layout -->
+    <tabbed-panel>
+      <div name="File"><!-- PLACEHOLDER --></div>
+      <div name="Schedule"><!-- PLACEHOLDER --></div>
+      <div name="Curriculum"><!-- PLACEHOLDER --></div>
+      <div name="Staff">
+        <extensible-list filterable="true">
+          <li>Foo</li>
+          <li>Bar</li>
+        </extensible-list>
+      </div>
+      <div name="Students"><!-- PLACEHOLDER --></div>
+      <div name="Rooms"><!-- PLACEHOLDER --></div>
+      <div name="About"><!-- PLACEHOLDER --></div>
+    </tabbed-panel>
+    <div><!-- PLACEHOLDER - contextual editing / assistant --></div>
     <!-- TODO: default data loading -->
   </body>
 </html>

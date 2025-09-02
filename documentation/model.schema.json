@@ -1,0 +1,116 @@
+{
+  "$id": "https://pawlicki.kaelri.com/school-scheduler/documentation/model.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "School-Scheduler Model Data",
+  "description": "A container object describing the entire dataset that the school-scheduler app is operating on.",
+  "$comment": "The schema for this object uses a custom '$enumFrom' property, which specifies a JSONPath value from which the possible values of the field are drawn.",
+  "type": "object",
+  "properties": {
+    "schedule_units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"}
+        }
+      }
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "program": {"type": "integer"},
+          "scheduled": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "schedule_unit": {"type": "integer", "$enumFrom": "$.schedule_units[*].id"},
+                "time_start": {"type": "integer"},
+                "time_end": {"type": "integer"},
+                "room": {"type": "integer", "$enumFrom": "$.rooms[*].id"},
+                "staff": {"type": "array", "items": {"type": "integer", "$enumFrom": "$.staff[*].id"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "programs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "courses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "course": {"type": "integer", "$enumFrom": "$.courses[*].id"},
+                "time_start": {"type": "integer"},
+                "time_end": {"type": "integer"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "courses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"}
+        }
+      }
+    },
+    "staff": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"}
+        }
+      }
+    },
+    "students": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"title": "Name", "type": "string"},
+          "courses": {
+            "title": "Courses",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "course": {"type": "integer", "$enumFrom": "$.courses[*].id"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "rooms": {
+      "type": "array",
+      "items": {
+        "title": "Room",
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"title": "Name", "type": "string"},
+          "capacity": {"title": "Capacity", "type": "integer"}
+        }
+      }
+    }
+  }
+}

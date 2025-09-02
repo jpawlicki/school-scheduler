@@ -209,3 +209,10 @@ A **tabbed panel** supporting vertical tabs over the main space.
 An **extensible sorted list** for use in the subtabs. It should support
 filtration, search, element addition and removal, and automatic sorting.
 
+A **detail editor** for editing the nouns. This may be able to parse the JSON
+schema directly to automatically build a simple form.
+
+The following utility functions are likely needed:
+
+  - Given the full data model and a class, compute a unique class label ("biology" unless that's ambiguous, then "Mrs. P's biology", then "Mrs. P's 4th-period biology", etc.)
+
