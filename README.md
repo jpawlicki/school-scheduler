@@ -11,3 +11,9 @@ the tool can make sure no person or room is double-booked. And if you add a few
 example students, the tool can help you make sure that you prevent or minimize
 students who can't follow their expected tracks due to scheduling conflicts.
 
+## TODO
+
+  - The noun-populator <li>s should be links. When clicked, they'll open the
+    item details in the main page. It's probably worth defining a custom element
+    for them altogether, allowing both mouseover-highlighting and click to
+    select.

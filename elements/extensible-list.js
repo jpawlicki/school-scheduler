@@ -25,6 +25,7 @@ customElements.define("extensible-list", class extends HTMLElement {
   constructor() {
     super();
     this.shadow = this.attachShadow({ mode: "open" });
+    this.uid = crypto.randomUUID();
     this.nextId = 0;
     this.legalItems = null;
     this.legalItemsMap = null;
@@ -39,11 +40,12 @@ customElements.define("extensible-list", class extends HTMLElement {
           padding: 0.5rem;
         }
         input[type="text"], select {
-          flex-grow: 1;
           border: 1px solid #ccc;
           border-radius: 4px;
           padding: 0.25rem;
-          min-width: 100px;
+        }
+        select {
+          width: fit-content;
         }
         #filter {
           margin-bottom: 0.25rem;
@@ -80,6 +82,9 @@ customElements.define("extensible-list", class extends HTMLElement {
           width: 1em;
           height: 1em;
         }
+        path {
+          fill: currentColor;
+        }
       </style>
       <div id="container">
         <div>
@@ -90,7 +95,7 @@ customElements.define("extensible-list", class extends HTMLElement {
         <ul>
           <slot></slot>
         </ul>
-        <svg id="remove" aria-label="Remove item" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="#fff"/></svg>
+        <svg id="remove" aria-label="Remove item" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       </div>
     `;
 
@@ -160,11 +165,15 @@ customElements.define("extensible-list", class extends HTMLElement {
     const obs = new MutationObserver(() => {
       obs.disconnect();
       sort();
+      for (let c of this.children) {
+        let id = parseInt(c.getAttribute("value"));
+        if (!isNaN(id)) this.nextId = Math.max(this.nextId, id + 1);
+      }
       obs.observe(this, { subtree: true, childList: true, characterData: true });
     });
     obs.observe(this, { subtree: true, childList: true, characterData: true });
 
-    for (let e of this.children) if (e.style.viewTransitionName == "") e.style.viewTransitionName = `list-item-${this.nextId++}`;
+    for (let e of this.children) if (e.style.viewTransitionName == "") e.style.viewTransitionName = `list-item-${this.uid}-${this.nextId++}`;
   }
 
   _syncSelectOptions() {
@@ -261,7 +270,7 @@ customElements.define("extensible-list", class extends HTMLElement {
       const li = document.createElement("li");
       li.textContent = newItemConfig.text;
       if (newItemConfig.value !== undefined) li.setAttribute("value", newItemConfig.value);
-      li.style.viewTransitionName = `list-item-${this.nextId++}`;
+      li.style.viewTransitionName = `list-item-${this.uid}-${this.nextId++}`;
       this.appendChild(li);
       this._syncSelectOptions();
     };

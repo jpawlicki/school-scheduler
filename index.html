@@ -12,32 +12,39 @@
         color: #ccc;
       }
     </style>
+    <script src="logic/jsonpath.js"></script>
     <script src="elements/tabbed-panel.js" type="module"></script>
     <script src="elements/extensible-list.js" type="module"></script>
   </head>
   <body>
     <tabbed-panel>
-      <div name="File"><!-- PLACEHOLDER --></div>
-      <div name="Schedule"><!-- PLACEHOLDER --></div>
-      <div name="Curriculum"><!-- PLACEHOLDER --></div>
-      <div name="Staff">
-        <extensible-list filterable="true">
-          <li>Foo</li>
-          <li>Bar</li>
-        </extensible-list>
+      <div name="File">
       </div>
-      <div name="Students"><!-- PLACEHOLDER --></div>
-      <div name="Rooms"><!-- PLACEHOLDER --></div>
-      <div name="About"><!-- PLACEHOLDER --></div>
+      <div name="Schedule">
+        <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="schedule_units"></extensible-list>
+      </div>
+      <div name="Curriculum">
+        <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="programs"></extensible-list>
+      </div>
+      <div name="Staff">
+        <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="staff"></extensible-list>
+      </div>
+      <div name="Students">
+        <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="students"></extensible-list>
+      </div>
+      <div name="Rooms">
+        <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="rooms"></extensible-list>
+      </div>
+      <div name="About">
+      </div>
     </tabbed-panel>
     <div> Assistant placeholder.<!-- PLACEHOLDER - contextual editing / assistant --></div>
-    <!-- TODO: default data loading -->
-    <script>
-      // TODO: default data loading.
-      const legalItems = [{name: "Mr. P", id: 1}, {name: "Mrs. H", id: 2}];
-      setTimeout(() => {
-        document.querySelector("extensible-list").setLegalItems(legalItems);
-      }, 1000);
+    <script type="module">
+      import { loadData } from "./logic/serialization.js";
+      import { TEMPLATES } from "./logic/templates.js";
+      window.addEventListener("load", () => {
+        loadData(JSON.stringify(TEMPLATES["test"]));
+      });
     </script>
   </body>
 </html>
