@@ -81,7 +81,7 @@ customElements.define("extensible-list", class extends HTMLElement {
           height: 1em;
         }
       </style>
-      <div>
+      <div id="container">
         <div>
           <input type="text" id="filter" placeholder="Filter">
         </div>
@@ -94,16 +94,25 @@ customElements.define("extensible-list", class extends HTMLElement {
       </div>
     `;
 
-    this.shadow.getElementById("add-button").addEventListener("click", () => this.addItem());
-    this.shadow.querySelector("div").addEventListener("keydown", e => {
+    const container = this.shadow.getElementById("container");
+    container.addEventListener("click", e => {
+      if (e.target.id === "add-button") this.addItem();
+    });
+    container.addEventListener("keydown", e => {
       if (e.target.id === "add-input" && e.key === "Enter") this.addItem();
     });
     this.shadow.getElementById("filter").addEventListener("input", e => this.refilter(e.target.value));
 
+    // Refresh select options on click/focus
+    container.addEventListener("mousedown", e => {
+      if (e.target.id === "add-input" && e.target.tagName === "SELECT") {
+        this._syncSelectOptions();
+      }
+    });
+
     { // Element removal handlers.
       const removeButton = this.shadow.getElementById("remove");
       const ul = this.shadow.querySelector("ul");
-      const thisElement = this;
       let hoveredItem = null;
 
       ul.addEventListener("mouseover", e => {
@@ -124,7 +133,10 @@ customElements.define("extensible-list", class extends HTMLElement {
       removeButton.addEventListener("click", () => {
         if (hoveredItem) {
           const removable = hoveredItem;
-          transition(() => thisElement.removeChild(removable));
+          transition(() => {
+            this.removeChild(removable);
+            this._syncSelectOptions();
+          });
           hoveredItem = null;
           removeButton.style.display = "none";
         }
@@ -141,9 +153,7 @@ customElements.define("extensible-list", class extends HTMLElement {
         if (textA > textB) return 1;
         return 0;
       });
-      for (let c of children) {
-        this.appendChild(c);
-      }
+      for (let c of children) this.appendChild(c);
     };
     sort();
 
@@ -157,72 +167,71 @@ customElements.define("extensible-list", class extends HTMLElement {
     for (let e of this.children) if (e.style.viewTransitionName == "") e.style.viewTransitionName = `list-item-${this.nextId++}`;
   }
 
-  static get observedAttributes() {
-    return ["filterable"];
+  _syncSelectOptions() {
+    if (!this.legalItems) return;
+
+    const addInput = this.shadow.getElementById("add-input");
+    const addButton = this.shadow.getElementById("add-button");
+
+    if (addInput.tagName !== "SELECT") return;
+
+    const currentItemValues = new Set(
+      Array.from(this.children).map(li => li.getAttribute("value"))
+    );
+
+    addInput.innerHTML = ""; // Clear existing options
+
+    // Repopulate with legal items that are NOT currently in the list
+    for (const item of this.legalItems) {
+      if (!currentItemValues.has(String(item.id))) {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.name;
+        addInput.appendChild(option);
+      }
+    }
+
+    // Handle placeholder for an empty select
+    if (addInput.options.length === 0) {
+      const placeholder = document.createElement("option");
+      placeholder.textContent = "All items added";
+      placeholder.disabled = true;
+      addInput.appendChild(placeholder);
+      addButton.disabled = true;
+    } else {
+      addButton.disabled = false;
+    }
   }
 
-  attributeChangedCallback(name, oldValue, newValue) {
-    let e = this.shadow.getElementById("filter");
-    if (e != null) e.style.display = this.hasAttribute("filterable") ? "block" : "none";
-  }
-
-  /**
-   * Restricts addable items to a predefined list and changes the input to a select dropdown.
-   * @param {Array<Object>} items An array of objects, e.g., [{name: "Item 1", id: "item1"}]
-   */
   setLegalItems(items) {
     this.legalItems = items;
     this.legalItemsMap = new Map(items.map(item => [String(item.id), item.name]));
-
     const oldInput = this.shadow.getElementById("add-input");
     const selectInput = document.createElement("select");
-    selectInput.id = "add-input"; // Keep the same ID for other listeners
-
-    for (const item of this.legalItems) {
-      const option = document.createElement("option");
-      option.value = item.id;
-      option.textContent = item.name;
-      selectInput.appendChild(option);
-    }
-
+    selectInput.id = "add-input";
     oldInput.replaceWith(selectInput);
+    this._syncSelectOptions(); // Initial population of select options
   }
 
-  /**
-   * Removes any list items that are not in the legal items list and updates the names
-   * of any legal items that may have changed.
-   */
   removeIllegalItems() {
-    if (!this.legalItemsMap) {
-      console.warn("removeIllegalItems called without setting legal items first via setLegalItems.");
-      return;
-    }
-
-    const toRemove = [];
-    const toUpdate = [];
+    if (!this.legalItemsMap) return;
+    const toRemove = [], toUpdate = [];
 
     for (const li of this.children) {
       const id = li.getAttribute("value");
       if (this.legalItemsMap.has(id)) {
-        // Item is legal; check if its name needs updating.
         const correctName = this.legalItemsMap.get(id);
-        if (li.textContent !== correctName) {
-          toUpdate.push({ li, correctName });
-        }
+        if (li.textContent !== correctName) toUpdate.push({ li, correctName });
       } else {
-        // Item is illegal.
         toRemove.push(li);
       }
     }
 
     if (toRemove.length > 0 || toUpdate.length > 0) {
       transition(() => {
-        for (const item of toUpdate) {
-          item.li.textContent = item.correctName;
-        }
-        for (const li of toRemove) {
-          this.removeChild(li);
-        }
+        toUpdate.forEach(item => item.li.textContent = item.correctName);
+        toRemove.forEach(li => this.removeChild(li));
+        this._syncSelectOptions(); // Resync after pruning
       });
     }
   }
@@ -232,34 +241,42 @@ customElements.define("extensible-list", class extends HTMLElement {
     let newItemConfig = {};
 
     if (addInput.tagName === "SELECT") {
+      if (addInput.options.length === 0 || addInput.selectedIndex === -1) return;
       const selectedOption = addInput.options[addInput.selectedIndex];
-      if (!selectedOption) return; // Nothing to add
-      newItemConfig = {
-        value: selectedOption.value,
-        text: selectedOption.textContent
-      };
-    } else { // It's an INPUT
+      if (selectedOption.disabled) return; // Don't add the placeholder
+      newItemConfig = { value: selectedOption.value, text: selectedOption.textContent };
+    } else {
       const text = addInput.value.trim();
-      if (!text) return; // Don't add empty items
+      if (!text) return;
       newItemConfig = { text };
       addInput.value = "";
     }
 
-    // Reset filter if new item doesn't match
     if (newItemConfig.text.toLowerCase().indexOf(this.shadow.getElementById("filter").value.toLowerCase()) === -1) {
       this.shadow.getElementById("filter").value = "";
       this.refilter();
     }
 
-    transition(() => {
+    const update = () => {
       const li = document.createElement("li");
       li.textContent = newItemConfig.text;
-      if (newItemConfig.value !== undefined) {
-        li.setAttribute("value", newItemConfig.value);
-      }
+      if (newItemConfig.value !== undefined) li.setAttribute("value", newItemConfig.value);
       li.style.viewTransitionName = `list-item-${this.nextId++}`;
       this.appendChild(li);
-    });
+      this._syncSelectOptions();
+    };
+
+    // Skip the transition if this is the final item of the list; the cross-fade looks like lag.
+    let lastValue = null;
+    if (this.lastChild != null) lastValue = this.lastChild.textContent;
+    if (lastValue != null && newItemConfig.text < lastValue) transition(update);
+    else update();
+  }
+
+  static get observedAttributes() { return ["filterable"]; }
+  attributeChangedCallback(name, oldValue, newValue) {
+    let e = this.shadow.getElementById("filter");
+    if (e != null) e.style.display = this.hasAttribute("filterable") ? "block" : "none";
   }
 
   refilter() {
@@ -271,9 +288,6 @@ customElements.define("extensible-list", class extends HTMLElement {
 });
 
 function transition(callback) {
-  if (!document.startViewTransition) {
-    callback();
-  } else {
-    document.startViewTransition(callback);
-  }
+  if (!document.startViewTransition) callback();
+  else document.startViewTransition(callback);
 }
