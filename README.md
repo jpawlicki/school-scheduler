@@ -16,4 +16,24 @@ students who can't follow their expected tracks due to scheduling conflicts.
   - The noun-populator <li>s should be links. When clicked, they'll open the
     item details in the main page. It's probably worth defining a custom element
     for them altogether, allowing both mouseover-highlighting and click to
-    select.
+    select. Especially if opening in either of the views is needed.
+  - Need to define a main-view thing per noun, and a contextual panel view
+    per noun-pair.
+
+The following custom elements are needed:
+
+A **timeline viewer**, which displays a vertical timeline. Boxes can be dragged
+around on the timeline. They should snap nicely to each other. Some boxes (e.g.
+"passing time" may be quite thin (2-3 minutes long). The unit for the timeline
+should be customizable; a minute (or at least quarter-hourly) unit is needed for
+the timeline itself, and a grade unit is needed for program organization. The
+viewer also needs an organized tray of unallocated and out-of-scope items. The
+element should also have a read-only mode for use in co-locating information.
+
+A **detail editor** for editing the nouns. This may be able to parse the JSON
+schema directly to automatically build a simple form.
+
+The following utility functions are likely needed:
+
+  - Given the full data model and a class, compute a unique class label ("biology" unless that's ambiguous, then "Mrs. P's biology", then "Mrs. P's 4th-period biology", etc.)
+

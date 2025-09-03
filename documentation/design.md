@@ -129,27 +129,54 @@ The following UI areas are needed:
 To accomplish this, the UI is split as follows:
 
 ```
-+---+---+----------------+---+
-| T | S |                | A |
-| a | u |                | s |
-| b | b |    Main        | s |
-| s | t |                | i |
-|   | a |                | s |
-|   | b |                | t |
-|   | s |                |   |
-+---+---+----------------+---+
-   \   \         \_ 1fr     \_ 30em
-    \   \_ max-content
-     \_ max-content
+     /‾ max-content
+    /      /‾ max-content   /‾ 1fr               /‾ fit-content
++------+-------+---------------------------+-----------+
+| Tabs | Nouns | Main View                 | Inspector |
+|      |       |                           |           |
+|      |       |                           |           |
+|      |       |                           |           |
+|      |       |                           |           |
+|      |       |                           |           | - 1fr
+|      |       |                           |           |
+|      |       |                           |           |
+|      |       |                           |           |
+|      |       |                           |           |
++------+-------+---------------------------+-----------+
+| Status Footer                                        | - 2em
++------------------------------------------------------+
+```
+
+The user can split the main view by "popping out" inspector details to
+a new main view:
+
+```
+      /‾ max-content
+     /      /‾ max-content
+    /      /          /‾ 1fr      /‾ 1fr         /‾ fit-content
++------+-------+-------------+-------------+-----------+
+| Tabs | Nouns | Main View   | View 2      | Inspector |
+|      |       |             |             |           |
+|      |       |             |             |           |
+|      |       |             |             |           |
+|      |       |             |             |           |
+|      |       |             |             |           | - 1fr
+|      |       |             |             |           |
+|      |       |             |             |           |
+|      |       |             |             |           |
+|      |       |             |             |           |
++------+-------+-------------+-------------+-----------+
+| Status Footer                                        | - 2em
++------------------------------------------------------+
 ```
 
 Tabs include:
+  - File (Save/Load/Print/Export)
   - Schedule
-  - Programs
+  - Curriculum (Programs)
   - Staff
   - Students
   - Rooms
-  - Save/Load/Print ("File")
   - About/Contact/Legal
 
 Subtabs & main page depend on the tab:
@@ -190,29 +217,3 @@ or shrink). Similar for rooms.
 
 Where a class allocation violates a soft preference, the class itself could have
 a small icon which (on mouseover) could indicate what the constraint is.
-
-## Implementation
-
-The implementation of the above design is done primarily through custom elements.
-The following custom elements are needed:
-
-A **timeline viewer**, which displays a vertical timeline. Boxes can be dragged
-around on the timeline. They should snap nicely to each other. Some boxes (e.g.
-"passing time" may be quite thin (2-3 minutes long). The unit for the timeline
-should be customizable; a minute (or at least quarter-hourly) unit is needed for
-the timeline itself, and a grade unit is needed for program organization. The
-viewer also needs an organized tray of unallocated and out-of-scope items. The
-element should also have a read-only mode for use in co-locating information.
-
-A **tabbed panel** supporting vertical tabs over the main space.
-
-An **extensible sorted list** for use in the subtabs. It should support
-filtration, search, element addition and removal, and automatic sorting.
-
-A **detail editor** for editing the nouns. This may be able to parse the JSON
-schema directly to automatically build a simple form.
-
-The following utility functions are likely needed:
-
-  - Given the full data model and a class, compute a unique class label ("biology" unless that's ambiguous, then "Mrs. P's biology", then "Mrs. P's 4th-period biology", etc.)
-

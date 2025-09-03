@@ -6,18 +6,62 @@
         margin: 0;
         font-family: "Lato", sans-serif;
         display: grid;
-        grid-template-columns: 1fr 20em;
+        grid-template-columns: 21.5rem 1fr 20em;
+        grid-template-rows: 1fr min-content;
       }
       tabbed-panel > div > extensible-list {
         color: #ccc;
+        width: 100%;
+      }
+      #main-view {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+      }
+      #footer {
+        background: #404040;
+        color: #ddd;
+        grid-column: 1 / 4;
+        height: min-content;
+      }
+      #contextual {
+        background: #404040;
+        color: #fff;
+      }
+      .left-shell {
+        --noun-link-rr-display: block;
+        --noun-link-r-display: block;
+        --noun-link-l-display: none;
+        --noun-link-ll-display: none;
+      }
+      .right-shell {
+        --noun-link-rr-display: none;
+        --noun-link-r-display: none;
+        --noun-link-l-display: block;
+        --noun-link-ll-display: block;
+      }
+      .left-view {
+        --noun-link-rr-display: block;
+        --noun-link-r-display: none;
+        --noun-link-contextual-display: block;
+        --noun-link-l-display: none;
+        --noun-link-ll-display: none;
+      }
+      .right-view {
+        --noun-link-rr-display: none;
+        --noun-link-r-display: none;
+        --noun-link-contextual-display: block;
+        --noun-link-l-display: none;
+        --noun-link-ll-display: block;
       }
     </style>
     <script src="logic/jsonpath.js"></script>
     <script src="elements/tabbed-panel.js" type="module"></script>
     <script src="elements/extensible-list.js" type="module"></script>
+    <script src="elements/noun-link.js" type="module"></script>
   </head>
   <body>
-    <tabbed-panel>
+    <tabbed-panel class="left-shell">
       <div name="File">
       </div>
       <div name="Schedule">
@@ -35,15 +79,43 @@
       <div name="Rooms">
         <extensible-list filterable="true" data-schedule-populator="true" data-schedule-noun="rooms"></extensible-list>
       </div>
-      <div name="About">
+      <div name="Help">
       </div>
     </tabbed-panel>
-    <div> Assistant placeholder.<!-- PLACEHOLDER - contextual editing / assistant --></div>
+    <div id="main-view">
+      <div id="view-1" class="left-view">Main View</div>
+      <div id="view-2" class="right-view"></div>
+    </div>
+    <div id="contextual" class="right-shell"> Contextual Panel</div>
+    <div id="footer"> Footer </div>
     <script type="module">
       import { loadData } from "./logic/serialization.js";
       import { TEMPLATES } from "./logic/templates.js";
+      import { showItem, getItemById } from "./logic/main.js";
+
+      let data = null;
       window.addEventListener("load", () => {
-        loadData(JSON.stringify(TEMPLATES["test"]));
+        data = loadData(JSON.stringify(TEMPLATES["test"]));
+        window.loaded_data = data; // For debugging.
+      });
+
+      // TODO: add MutationObservers for the extensible-list[data-schedule-populator="true"] so that when items are
+      // deleted from that, they can be deleted from `database` and any open main views on them can be closed.
+
+      document.addEventListener("scheduler-show-noun", e => {
+        showItem(data, e.detail.type, e.detail.id, e.detail.panel, document.getElementById("view-1"), document.getElementById("view-2"), document.getElementById("contextual"));
+      });
+
+      document.addEventListener("scheduler-data-updated", e => {
+        for (let e of document.querySelectorAll("noun-link")) {
+          let item = getItemById(data, e.getAttribute("type"), parseInt(e.getAttribute("value")));
+          if (item == null) {
+            item.parentNode.removeChild(item);
+          } else {
+            e.textContent = item.name;
+          }
+        }
+        for (let e of document.querySelectorAll("extensible-list, main-view-teacher, main-view-room, main-view-program, main-view-student, main-view-schedule")) e.refresh();
       });
     </script>
   </body>

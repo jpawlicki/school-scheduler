@@ -19,6 +19,15 @@ reference you may update it freely.
 Illegal items will not be automatically removed from the list, but it will
 not be possible to add new ones. Illegal items can be pruned from the list
 (or have their names updated) by calling `.removeIllegalItems()`.
+
+Normally, creating new elements adds <li> elements to the list. However,
+if you call `.setItemFactory(f)`, where f is a function that accepts a
+(name, value) and returns an element, adding elements will create those
+instead.
+
+TODO: Add an attribute controlling whether to window.confirm on removals.
+TODO: mouseleave for the remove button should hide remove button if we're
+leaving the entire element.
 */
 
 customElements.define("extensible-list", class extends HTMLElement {
@@ -29,6 +38,12 @@ customElements.define("extensible-list", class extends HTMLElement {
     this.nextId = 0;
     this.legalItems = null;
     this.legalItemsMap = null;
+    this.itemFactory = (name, value) => {
+      const e = document.createElement("li");
+      e.appendChild(document.createTextNode(name));
+      if (value !== undefined) e.setAttribute("value", newItemConfig.value);
+      return e;
+    };
   }
 
   connectedCallback() {
@@ -66,7 +81,7 @@ customElements.define("extensible-list", class extends HTMLElement {
           margin: .25rem 0 0 0;
           padding: 0;
         }
-        ::slotted(li) {
+        ::slotted(*) {
           padding-left: 1rem;
         }
         #remove {
@@ -84,6 +99,10 @@ customElements.define("extensible-list", class extends HTMLElement {
         }
         path {
           fill: currentColor;
+          opacity: 50%;
+        }
+        svg:hover path {
+          opacity: 100%;
         }
       </style>
       <div id="container">
@@ -121,7 +140,8 @@ customElements.define("extensible-list", class extends HTMLElement {
       let hoveredItem = null;
 
       ul.addEventListener("mouseover", e => {
-        const t = e.target.closest("li");
+        let t = e.target;
+        while (t && t.parentNode != this) t = t.parentNode;
         if (t && this.contains(t)) {
           hoveredItem = t;
           removeButton.style.display = "block";
@@ -169,6 +189,7 @@ customElements.define("extensible-list", class extends HTMLElement {
         let id = parseInt(c.getAttribute("value"));
         if (!isNaN(id)) this.nextId = Math.max(this.nextId, id + 1);
       }
+      for (let e of this.children) if (e.style.viewTransitionName == "") e.style.viewTransitionName = `list-item-${this.uid}-${this.nextId++}`;
       obs.observe(this, { subtree: true, childList: true, characterData: true });
     });
     obs.observe(this, { subtree: true, childList: true, characterData: true });
@@ -267,9 +288,7 @@ customElements.define("extensible-list", class extends HTMLElement {
     }
 
     const update = () => {
-      const li = document.createElement("li");
-      li.textContent = newItemConfig.text;
-      if (newItemConfig.value !== undefined) li.setAttribute("value", newItemConfig.value);
+      const li = this.itemFactory(newItemConfig.text, newItemConfig.value);
       li.style.viewTransitionName = `list-item-${this.uid}-${this.nextId++}`;
       this.appendChild(li);
       this._syncSelectOptions();
@@ -293,6 +312,16 @@ customElements.define("extensible-list", class extends HTMLElement {
     for (let e of this.children) {
       e.style.display = e.textContent.toLowerCase().indexOf(filterValue) != -1 ? "list-item" : "none";
     }
+  }
+
+  refresh() {
+    this._syncSelectOptions();
+    this.removeIllegalItems();
+    this.refilter();
+  }
+
+  setItemFactory(factory) {
+    this.itemFactory = factory;
   }
 });
 

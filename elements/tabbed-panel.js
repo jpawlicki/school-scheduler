@@ -41,6 +41,7 @@ customElements.define("tabbed-panel", class extends HTMLElement {
         #content {
           overflow: auto;
           max-height: 100%;
+          width: 100%;
           background-color: #404040
         }
       </style>
@@ -76,7 +77,7 @@ customElements.define("tabbed-panel", class extends HTMLElement {
     }
     for (let s of this.children) {
       if (s.getAttribute("name") === tabName) {
-        s.style.display = "unset";
+        s.style.display = null;
       } else {
         s.style.display = "none";
       }
