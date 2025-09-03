@@ -32,5 +32,12 @@
     </tabbed-panel>
     <div> Assistant placeholder.<!-- PLACEHOLDER - contextual editing / assistant --></div>
     <!-- TODO: default data loading -->
+    <script>
+      // TODO: default data loading.
+      const legalItems = [{name: "Mr. P", id: 1}, {name: "Mrs. H", id: 2}];
+      setTimeout(() => {
+        document.querySelector("extensible-list").setLegalItems(legalItems);
+      }, 1000);
+    </script>
   </body>
 </html>

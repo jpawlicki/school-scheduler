@@ -26,6 +26,8 @@ customElements.define("extensible-list", class extends HTMLElement {
     super();
     this.shadow = this.attachShadow({ mode: "open" });
     this.nextId = 0;
+    this.legalItems = null;
+    this.legalItemsMap = null;
   }
 
   connectedCallback() {
@@ -36,11 +38,12 @@ customElements.define("extensible-list", class extends HTMLElement {
           position: relative;
           padding: 0.5rem;
         }
-        input[type="text"] {
+        input[type="text"], select {
           flex-grow: 1;
           border: 1px solid #ccc;
           border-radius: 4px;
           padding: 0.25rem;
+          min-width: 100px;
         }
         #filter {
           margin-bottom: 0.25rem;
@@ -92,8 +95,8 @@ customElements.define("extensible-list", class extends HTMLElement {
     `;
 
     this.shadow.getElementById("add-button").addEventListener("click", () => this.addItem());
-    this.shadow.getElementById("add-input").addEventListener("keydown", e => {
-      if (e.key === "Enter") this.addItem();
+    this.shadow.querySelector("div").addEventListener("keydown", e => {
+      if (e.target.id === "add-input" && e.key === "Enter") this.addItem();
     });
     this.shadow.getElementById("filter").addEventListener("input", e => this.refilter(e.target.value));
 
@@ -131,7 +134,6 @@ customElements.define("extensible-list", class extends HTMLElement {
     this.shadow.getElementById("filter").style.display = this.hasAttribute("filterable") ? "block" : "none";
 
     const sort = () => {
-      // Sort child nodes.
       const children = Array.from(this.children).sort((a, b) => {
         const textA = a.textContent.toLowerCase();
         const textB = b.textContent.toLowerCase();
@@ -145,13 +147,12 @@ customElements.define("extensible-list", class extends HTMLElement {
     };
     sort();
 
-    const obs = new MutationObserver(mutations => {
+    const obs = new MutationObserver(() => {
       obs.disconnect();
-      console.log(mutations);
       sort();
-      obs.observe(this, {subtree: true, childList: true, characterData: true});
+      obs.observe(this, { subtree: true, childList: true, characterData: true });
     });
-    obs.observe(this, {subtree: true, childList: true, characterData: true});
+    obs.observe(this, { subtree: true, childList: true, characterData: true });
 
     for (let e of this.children) if (e.style.viewTransitionName == "") e.style.viewTransitionName = `list-item-${this.nextId++}`;
   }
@@ -165,17 +166,97 @@ customElements.define("extensible-list", class extends HTMLElement {
     if (e != null) e.style.display = this.hasAttribute("filterable") ? "block" : "none";
   }
 
+  /**
+   * Restricts addable items to a predefined list and changes the input to a select dropdown.
+   * @param {Array<Object>} items An array of objects, e.g., [{name: "Item 1", id: "item1"}]
+   */
+  setLegalItems(items) {
+    this.legalItems = items;
+    this.legalItemsMap = new Map(items.map(item => [String(item.id), item.name]));
+
+    const oldInput = this.shadow.getElementById("add-input");
+    const selectInput = document.createElement("select");
+    selectInput.id = "add-input"; // Keep the same ID for other listeners
+
+    for (const item of this.legalItems) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.name;
+      selectInput.appendChild(option);
+    }
+
+    oldInput.replaceWith(selectInput);
+  }
+
+  /**
+   * Removes any list items that are not in the legal items list and updates the names
+   * of any legal items that may have changed.
+   */
+  removeIllegalItems() {
+    if (!this.legalItemsMap) {
+      console.warn("removeIllegalItems called without setting legal items first via setLegalItems.");
+      return;
+    }
+
+    const toRemove = [];
+    const toUpdate = [];
+
+    for (const li of this.children) {
+      const id = li.getAttribute("value");
+      if (this.legalItemsMap.has(id)) {
+        // Item is legal; check if its name needs updating.
+        const correctName = this.legalItemsMap.get(id);
+        if (li.textContent !== correctName) {
+          toUpdate.push({ li, correctName });
+        }
+      } else {
+        // Item is illegal.
+        toRemove.push(li);
+      }
+    }
+
+    if (toRemove.length > 0 || toUpdate.length > 0) {
+      transition(() => {
+        for (const item of toUpdate) {
+          item.li.textContent = item.correctName;
+        }
+        for (const li of toRemove) {
+          this.removeChild(li);
+        }
+      });
+    }
+  }
+
   addItem() {
     const addInput = this.shadow.getElementById("add-input");
-    const item = addInput.value.trim();
-    addInput.value = "";
-    if (item.toLowerCase().indexOf(this.shadow.getElementById("filter").value.toLowerCase()) == -1) {
+    let newItemConfig = {};
+
+    if (addInput.tagName === "SELECT") {
+      const selectedOption = addInput.options[addInput.selectedIndex];
+      if (!selectedOption) return; // Nothing to add
+      newItemConfig = {
+        value: selectedOption.value,
+        text: selectedOption.textContent
+      };
+    } else { // It's an INPUT
+      const text = addInput.value.trim();
+      if (!text) return; // Don't add empty items
+      newItemConfig = { text };
+      addInput.value = "";
+    }
+
+    // Reset filter if new item doesn't match
+    if (newItemConfig.text.toLowerCase().indexOf(this.shadow.getElementById("filter").value.toLowerCase()) === -1) {
       this.shadow.getElementById("filter").value = "";
       this.refilter();
     }
+
     transition(() => {
       const li = document.createElement("li");
-      li.textContent = item;
+      li.textContent = newItemConfig.text;
+      if (newItemConfig.value !== undefined) {
+        li.setAttribute("value", newItemConfig.value);
+      }
       li.style.viewTransitionName = `list-item-${this.nextId++}`;
       this.appendChild(li);
     });
@@ -190,6 +271,9 @@ customElements.define("extensible-list", class extends HTMLElement {
 });
 
 function transition(callback) {
-  if (!document.startViewTransition) callback();
-  else document.startViewTransition(callback);
+  if (!document.startViewTransition) {
+    callback();
+  } else {
+    document.startViewTransition(callback);
+  }
 }
