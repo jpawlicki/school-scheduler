@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="scheduler.js" type="module"></script>
+    <style>
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <div id="basictools">
+        <!-- TODO: Help button, which could link to a page with a guide. -->
+        <!-- TODO: Save to file button. Disabled until a modification is made.
+             -->
+        <!-- TODO: Load from file button. Should notify if there are unsaved
+             modifications. -->
+        <!-- TODO: Undo button. -->
+        <!-- TODO: Redo button. -->
+      </div>
+      <div id="windowselect">
+        <!-- TODO: Some kind of switch, tabs, or toggle for moving the main view
+             between the settingseditor, blockeditor, resourceeditor, scheduler,
+             linker. -->
+      </div>
+      <div id="schedulewindowtools"> <!-- Only shown in scheduler view. -->
+        <!-- TODO: Sort button. The button should generate a valid schedule
+             with some kind of orderly presentation. Locked blocks are not
+             moved. -->
+        <!-- TODO: Shuffle button. The shuffle tool should reshuffle the times
+             of all unlocked blocks, but satisfy constraints if possible. -->
+      </div>
+    </div>
+    <div id="settingseditor">
+      <!-- TODO: A table of schedule-wide settings. Each row is a setting and
+           value. The only setting right now is the number of days in the
+           schedule, which should be between 1 and 7 (inclusive). Editing the
+           value should update the model. -->
+    </div>
+    <div id="blockeditor">
+      <!-- TODO: A table of all blocks. Each row has the block id (immutable),
+           name, duration, and number of occurrences. Editing these values
+           updates the model. Rows may be deleted. New rows may be added. -->
+    </div>
+    <div id="resourceeditor">
+      <!-- TODO: A table of all resources. Each row has the resource id
+           (immutable), and name of the resource. Editing these values updates
+           the model. Rows may be deleted. New rows may be added.  -->
+    </div>
+    <div id="scheduler">
+      <div id="blocklist">
+        <!-- TODO: list of all blocks. Each element has a name and edit icon
+             (that appears on mousover. Clicking edit should show a dialog that
+             allows the user to edit the name, duration, and number of
+             occurrences of the block. -->
+      </div>
+      <div>
+        <!-- TODO: A timeline display of blocks. Each day is a column, with
+             time flowing downward. Blocks can be clicked to toggle
+             locked/unlocked state. Blocks can be dragged to adjust their
+             time and day. Multiple blocks may be concurrent, and should split
+             the space between them if possible, overlapping if not. -->
+      </div>
+      <div id="resourcelist">
+        <!-- TODO: list of all resources. Clicking a resource should show a
+             dialog that allows the user to edit the name of the resource. -->
+      </div>
+    </div>
+    <div id="linker">
+      <!-- TODO: a table with blocks as columns and resources as rows, and
+           checkboxes in each cell. Checking the box creates a "MUST" link
+           between the resource and block. -->
+    </div>
+  </body>
+</html>
