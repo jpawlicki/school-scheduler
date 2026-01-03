@@ -290,7 +290,16 @@
       .schedule-block.locked:hover {
         filter: none;
       }
-      /* Conflict Highlighting */
+      
+      /* Related Peer Highlight (Common Resource) */
+      .schedule-block.related-peer rect {
+        stroke: #f59e0b !important; /* Amber-500 */
+        stroke-width: 2px !important;
+        stroke-dasharray: 2;
+        fill: #ffe082 !important; /* Amber-200 */
+      }
+
+      /* Conflict Highlighting (Overrides Related Peer) */
       .schedule-block.conflict-hazard rect {
         stroke: #dc2626 !important; /* Red-600 */
         stroke-width: 2px !important;
@@ -742,7 +751,7 @@
       }
 
       function getPotentialConflicts(blockId, slotIndex, day, time) {
-        const conflicts = [];
+        const results = [];
         const movingBlock = data.blocks[blockId];
         if (!movingBlock) return [];
         const movingDuration = movingBlock.duration;
@@ -768,23 +777,28 @@
                 // Skip the specific slot being moved
                 if (parseInt(otherBlockId) === blockId && sIndex === slotIndex) return;
 
+                // Check conflict (geometric overlap on the predicted day)
+                let isConflict = false;
                 if (slot.day === day) {
                   const otherStart = slot.time;
                   const otherEnd = slot.time + otherBlock.duration;
-
                   if (start < otherEnd && end > otherStart) {
-                      conflicts.push({
-                       resourceName: resource.name,
-                       blockId: parseInt(otherBlockId),
-                       slotIndex: sIndex
-                      });
+                      isConflict = true;
                   }
                 }
+                
+                // Add to results (highlight all that share a resource, flag conflicts)
+                results.push({
+                   resourceName: resource.name,
+                   blockId: parseInt(otherBlockId),
+                   slotIndex: sIndex,
+                   isConflict: isConflict
+                });
               });
             }
           });
         });
-        return conflicts;
+        return results;
       }
 
       function undo(newBlockCallback, newResourceCallback) {
@@ -1285,6 +1299,9 @@
             document.querySelectorAll('.schedule-block.conflict-hazard').forEach(el => {
                 el.classList.remove('conflict-hazard');
             });
+            document.querySelectorAll('.schedule-block.related-peer').forEach(el => {
+                el.classList.remove('related-peer');
+            });
             
             // 3. Group by target block to combine labels
             const groupedConflicts = {};
@@ -1295,6 +1312,7 @@
                      groupedConflicts[key] = {
                          blockId: conflict.blockId,
                          slotIndex: conflict.slotIndex,
+                         isConflict: conflict.isConflict, // Geometric property, same for all
                          resources: new Set()
                      };
                 }
@@ -1316,54 +1334,60 @@
 
             // 5. Draw grouped conflicts
             Object.values(groupedConflicts).forEach(group => {
-                const { blockId, slotIndex, resources } = group;
+                const { blockId, slotIndex, resources, isConflict } = group;
                 const resourceLabel = Array.from(resources).join(', ');
 
                 const elB = document.querySelector(`.schedule-block[data-block-id="${blockId}"][data-slot-index="${slotIndex}"]`);
                 if (elB) {
-                    elB.classList.add('conflict-hazard');
-                    
-                    const rectB = elB.querySelector('rect');
-                    const xB = parseFloat(rectB.getAttribute('x'));
-                    const yB = parseFloat(rectB.getAttribute('y'));
-                    const wB = parseFloat(rectB.getAttribute('width'));
-                    const hB = parseFloat(rectB.getAttribute('height'));
-                    
-                    const cxB = xB + wB / 2;
-                    const cyB = yB + hB / 2;
-                    
-                    // Draw Dynamic Line
-                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                    line.setAttribute('x1', cxA);
-                    line.setAttribute('y1', cyA);
-                    line.setAttribute('x2', cxB);
-                    line.setAttribute('y2', cyB);
-                    line.setAttribute('stroke', '#ef4444'); 
-                    line.setAttribute('stroke-width', '2');
-                    line.setAttribute('stroke-dasharray', '5,5');
-                    line.setAttribute('opacity', '0.6');
-                    conflictsGroup.appendChild(line);
-                    
-                    // Label
-                    const midX = (cxA + cxB) / 2;
-                    const midY = (cyA + cyB) / 2;
-                    
-                    const textG = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                    textG.setAttribute('transform', `translate(${midX}, ${midY})`);
-                    
-                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('dominant-baseline', 'middle');
-                    text.setAttribute('font-size', '10');
-                    text.setAttribute('fill', '#dc2626');
-                    text.setAttribute('font-weight', 'bold');
-                    text.textContent = resourceLabel;
-                    text.setAttribute('stroke', 'white');
-                    text.setAttribute('stroke-width', '3');
-                    text.setAttribute('paint-order', 'stroke');
-                    
-                    textG.appendChild(text);
-                    conflictsGroup.appendChild(textG);
+                    // Always highlight related
+                    elB.classList.add('related-peer');
+
+                    // If active conflict, add hazard style and draw line
+                    if (isConflict) {
+                        elB.classList.add('conflict-hazard');
+                        
+                        const rectB = elB.querySelector('rect');
+                        const xB = parseFloat(rectB.getAttribute('x'));
+                        const yB = parseFloat(rectB.getAttribute('y'));
+                        const wB = parseFloat(rectB.getAttribute('width'));
+                        const hB = parseFloat(rectB.getAttribute('height'));
+                        
+                        const cxB = xB + wB / 2;
+                        const cyB = yB + hB / 2;
+                        
+                        // Draw Dynamic Line
+                        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        line.setAttribute('x1', cxA);
+                        line.setAttribute('y1', cyA);
+                        line.setAttribute('x2', cxB);
+                        line.setAttribute('y2', cyB);
+                        line.setAttribute('stroke', '#ef4444'); 
+                        line.setAttribute('stroke-width', '2');
+                        line.setAttribute('stroke-dasharray', '5,5');
+                        line.setAttribute('opacity', '0.6');
+                        conflictsGroup.appendChild(line);
+                        
+                        // Label
+                        const midX = (cxA + cxB) / 2;
+                        const midY = (cyA + cyB) / 2;
+                        
+                        const textG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                        textG.setAttribute('transform', `translate(${midX}, ${midY})`);
+                        
+                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('dominant-baseline', 'middle');
+                        text.setAttribute('font-size', '10');
+                        text.setAttribute('fill', '#dc2626');
+                        text.setAttribute('font-weight', 'bold');
+                        text.textContent = resourceLabel;
+                        text.setAttribute('stroke', 'white');
+                        text.setAttribute('stroke-width', '3');
+                        text.setAttribute('paint-order', 'stroke');
+                        
+                        textG.appendChild(text);
+                        conflictsGroup.appendChild(textG);
+                    }
                 }
             });
         }
@@ -1521,6 +1545,20 @@
         let dragState = null;
 
         function handleDragStart(e, blockId, slotIndex, startDay, startTime, isLocked, element) {
+            // Calculate click offset relative to the block's top-left corner
+            const container = document.getElementById('scheduleContainer');
+            const containerRect = container.getBoundingClientRect();
+            const rect = element.querySelector('rect');
+            
+            // Current visual position of the block
+            const blockY = parseFloat(rect.getAttribute('y'));
+            
+            // Mouse Y relative to SVG/Container content
+            const mouseY = e.clientY - containerRect.top + container.scrollTop;
+            
+            // Offset
+            const offsetY = mouseY - blockY;
+
             dragState = {
                 blockId: blockId,
                 slotIndex: slotIndex,
@@ -1528,7 +1566,8 @@
                 startY: e.clientY,
                 element: element,
                 startTransform: element.getAttribute('transform') || '',
-                isLocked: isLocked // Store locked state
+                isLocked: isLocked, // Store locked state
+                offsetY: offsetY // Store vertical offset for precise time snapping
             };
             
             if (!isLocked) {
@@ -1547,37 +1586,62 @@
             // If locked, don't update visual drag position
             if (dragState.isLocked) return;
 
-            const dx = e.clientX - dragState.startX;
-            const dy = e.clientY - dragState.startY;
-
-            // Visual update (ghosting/direct movement)
-            dragState.element.setAttribute('transform', `translate(${dx}, ${dy})`);
-
-            // --- Phase 3 Logic: Dynamic Conflict Feedback ---
-            const width = scheduleContainer.clientWidth;
+            const container = document.getElementById('scheduleContainer');
+            const containerRect = container.getBoundingClientRect();
+            
+            // 1. Calculate New Day based on Cursor X
+            const mouseX = e.clientX - containerRect.left;
+            const width = container.clientWidth;
             const dayWidth = width / data.days;
-            const totalSeconds = 24 * 60 * 60;
-            const TOTAL_HEIGHT = 24 * 60;
             
-            // Calculate hypothetical position
-            const block = getBlock(dragState.blockId);
-            const slot = block.slots[dragState.slotIndex];
-            
-            // Day Change
-            const dayChange = Math.round(dx / dayWidth);
-            let newDay = slot.day + dayChange;
-            
-            // Time Change
-            const timeChangeSeconds = dy * 60; 
-            let snappedTimeChange = Math.round(timeChangeSeconds / 600) * 600;
-            let newTime = slot.time + snappedTimeChange;
-
-            // Clamping for preview
+            let newDay = Math.floor(mouseX / dayWidth);
             if (newDay < 0) newDay = 0;
             if (newDay >= data.days) newDay = data.days - 1;
+
+            // 2. Calculate New Time based on Cursor Y (minus offset)
+            const TOTAL_HEIGHT = 24 * 60; // 1440 px
+            const totalSeconds = 86400;
+            
+            // Mouse Y in container coordinates (accounting for scroll)
+            const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
+            
+            // Target Y for the top of the block
+            const targetPixelY = currentMouseY - dragState.offsetY;
+            
+            // Convert to seconds
+            let rawTime = (targetPixelY / TOTAL_HEIGHT) * totalSeconds;
+            
+            // Snap to 10 minutes (600 seconds)
+            let newTime = Math.round(rawTime / 600) * 600;
+            
+            // Clamp Time
+            const block = getBlock(dragState.blockId);
             if (newTime < 0) newTime = 0;
             if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
 
+            // 3. Snap Visual Element
+            // We translate the group (<g>) relative to its original position.
+            // The <rect> inside has attributes x and y.
+            // We need to calculate the translation needed to put it at (newDayColumn, newTimeRow).
+            
+            const rect = dragState.element.querySelector('rect');
+            const originalRectX = parseFloat(rect.getAttribute('x'));
+            const originalRectY = parseFloat(rect.getAttribute('y'));
+            const rectWidth = parseFloat(rect.getAttribute('width'));
+            
+            // Target X: Center in the new day column
+            // We keep the block's current width for consistency during drag
+            const targetX = (newDay * dayWidth) + (dayWidth - rectWidth) / 2;
+            
+            // Target Y: Based on snapped time
+            const targetY = (newTime / totalSeconds) * TOTAL_HEIGHT;
+            
+            const translateX = targetX - originalRectX;
+            const translateY = targetY - originalRectY;
+            
+            dragState.element.setAttribute('transform', `translate(${translateX}, ${translateY})`);
+
+            // 4. Render Conflicts
             const conflicts = getPotentialConflicts(dragState.blockId, dragState.slotIndex, newDay, newTime);
             renderDynamicConflicts(conflicts, dragState.element, newDay, newTime);
         });
@@ -1585,27 +1649,31 @@
         window.addEventListener('mouseup', (e) => {
             if (!dragState) return;
             
-            const dx = e.clientX - dragState.startX;
-            const dy = e.clientY - dragState.startY;
+            // Logic must match mousemove exactly for consistency
+            const container = document.getElementById('scheduleContainer');
+            const containerRect = container.getBoundingClientRect();
             
-            // Calculate logic updates
-            const width = scheduleContainer.clientWidth;
+            // 1. New Day
+            const mouseX = e.clientX - containerRect.left;
+            const width = container.clientWidth;
             const dayWidth = width / data.days;
+            let newDay = Math.floor(mouseX / dayWidth);
+            if (newDay < 0) newDay = 0;
+            if (newDay >= data.days) newDay = data.days - 1;
             
-            // Calculate Day Change
-            const dayChange = Math.round(dx / dayWidth);
+            // 2. New Time
+            const TOTAL_HEIGHT = 24 * 60; 
+            const totalSeconds = 86400;
+            const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
+            const targetPixelY = currentMouseY - dragState.offsetY;
+            let rawTime = (targetPixelY / TOTAL_HEIGHT) * totalSeconds;
+            let newTime = Math.round(rawTime / 600) * 600;
             
-            // Calculate Time Change
-            // 1 pixel = 60 seconds (since TOTAL_HEIGHT = 24 * 60)
-            const timeChangeSeconds = dy * 60;
-            // Snap to 10 mins (600 seconds)
-            const snappedTimeChange = Math.round(timeChangeSeconds / 600) * 600;
-
             const block = getBlock(dragState.blockId);
-            const slot = block.slots[dragState.slotIndex];
             
-            const newDay = slot.day + dayChange;
-            const newTime = slot.time + snappedTimeChange;
+            // Clamp Time
+            if (newTime < 0) newTime = 0;
+            if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
 
             // Clean up visual state
             if (!dragState.isLocked) {
@@ -1618,11 +1686,14 @@
             document.querySelectorAll('.schedule-block.conflict-hazard').forEach(el => {
                 el.classList.remove('conflict-hazard');
             });
+            document.querySelectorAll('.schedule-block.related-peer').forEach(el => {
+                el.classList.remove('related-peer');
+            });
             
             // Commit change
             moveBlockSlot(dragState.blockId, dragState.slotIndex, newDay, newTime);
             
-            // Re-render blocks (and static conflicts)
+            // Re-render
             renderBlocks();
             
             dragState = null;
