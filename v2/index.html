@@ -285,7 +285,7 @@
         filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
       }
       .schedule-block.locked {
-        cursor: not-allowed;
+        cursor: pointer; /* Can still click to unlock */
       }
       .schedule-block.locked:hover {
         filter: none;
@@ -381,7 +381,7 @@
         <svg id="scheduleSvg" xmlns="http://www.w3.org/2000/svg">
             <defs>
                 <pattern id="stripedPattern" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
-                    <line x1="0" y1="0" x2="0" y2="10" stroke="#374151" stroke-width="2" opacity="0.1" />
+                    <line x1="0" y1="0" x2="0" y2="10" stroke="#374151" stroke-width="2" opacity="0.3" />
                 </pattern>
             </defs>
             <g id="gridGroup"></g>
@@ -589,8 +589,16 @@
         // Ensure block fits within the day (24 hours)
         if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
 
-        // No change check
-        if (slot.day === newDay && slot.time === newTime) return;
+        // No change check (Click/Drop in place) -> Toggle Lock
+        if (slot.day === newDay && slot.time === newTime) {
+             recordStateForUndo();
+             slot.locked = !slot.locked;
+             notifyAllListeners();
+             return;
+        }
+
+        // If block is locked, prevent moving
+        if (slot.locked) return;
 
         recordStateForUndo();
         slot.day = newDay;
@@ -1172,8 +1180,8 @@
                         
                         // Setup for interaction
                         g.addEventListener('mousedown', (e) => {
-                            if (slot.locked) return;
-                            handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, g);
+                            // Pass locked state to handler
+                            handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, slot.locked, g);
                         });
                         
                         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1183,18 +1191,25 @@
                         rect.setAttribute('height', h);
                         rect.setAttribute('rx', 4);
                         rect.setAttribute('ry', 4);
-
-                        if (slot.locked) {
-                            rect.setAttribute('fill', 'url(#stripedPattern)');
-                            rect.setAttribute('stroke', '#374151');
-                        } else {
-                            rect.setAttribute('fill', '#60a5fa');
-                            rect.setAttribute('stroke', '#2563eb');
-                        }
+                        rect.setAttribute('fill', '#60a5fa');
+                        rect.setAttribute('stroke', '#2563eb');
                         rect.setAttribute('stroke-width', 1);
                         rect.setAttribute('opacity', 0.9);
-                        
                         g.appendChild(rect);
+
+                        if (slot.locked) {
+                            // Overlay pattern rect for locked state
+                            const patternRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                            patternRect.setAttribute('x', colX + 2);
+                            patternRect.setAttribute('y', y);
+                            patternRect.setAttribute('width', (dayWidth / numCols) - 4);
+                            patternRect.setAttribute('height', h);
+                            patternRect.setAttribute('rx', 4);
+                            patternRect.setAttribute('ry', 4);
+                            patternRect.setAttribute('fill', 'url(#stripedPattern)');
+                            patternRect.setAttribute('pointer-events', 'none'); 
+                            g.appendChild(patternRect);
+                        }
 
                         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute('x', colX + 6);
@@ -1216,7 +1231,7 @@
         
         let dragState = null;
 
-        function handleDragStart(e, blockId, slotIndex, startDay, startTime, element) {
+        function handleDragStart(e, blockId, slotIndex, startDay, startTime, isLocked, element) {
             dragState = {
                 blockId: blockId,
                 slotIndex: slotIndex,
@@ -1224,17 +1239,22 @@
                 startY: e.clientY,
                 element: element,
                 startTransform: element.getAttribute('transform') || '',
-                // Calculate initial day offset to calculate delta later
-                // Just relying on delta movement is simpler than full coordinate reversal
+                isLocked: isLocked // Store locked state
             };
-            element.classList.add('dragging');
-            // Bring to front
-            blocksGroup.appendChild(element); 
+            
+            if (!isLocked) {
+                element.classList.add('dragging');
+                // Bring to front
+                blocksGroup.appendChild(element); 
+            }
         }
 
         window.addEventListener('mousemove', (e) => {
             if (!dragState) return;
             e.preventDefault();
+            
+            // If locked, don't update visual drag position
+            if (dragState.isLocked) return;
 
             const dx = e.clientX - dragState.startX;
             const dy = e.clientY - dragState.startY;
@@ -1254,15 +1274,12 @@
             const dayWidth = width / data.days;
             
             // Calculate Day Change
-            // Rounds to nearest day column
             const dayChange = Math.round(dx / dayWidth);
             
             // Calculate Time Change
             // 1 pixel = 60 seconds (since TOTAL_HEIGHT = 24 * 60)
-            // But we want to snap to 10 mins (600 seconds)
-            // Time change in seconds = dy * (totalSeconds / TOTAL_HEIGHT)
-            // TOTAL_HEIGHT = 1440, totalSeconds = 86400. Ratio = 60.
             const timeChangeSeconds = dy * 60;
+            // Snap to 10 mins (600 seconds)
             const snappedTimeChange = Math.round(timeChangeSeconds / 600) * 600;
 
             const block = getBlock(dragState.blockId);
@@ -1272,13 +1289,15 @@
             const newTime = slot.time + snappedTimeChange;
 
             // Clean up visual state
-            dragState.element.classList.remove('dragging');
-            dragState.element.setAttribute('transform', ''); // Reset visual transform, let renderer handle position
+            if (!dragState.isLocked) {
+                dragState.element.classList.remove('dragging');
+                dragState.element.setAttribute('transform', ''); 
+            }
             
             // Commit change
             moveBlockSlot(dragState.blockId, dragState.slotIndex, newDay, newTime);
             
-            // Re-render blocks to show updated position
+            // Re-render blocks
             renderBlocks();
             
             dragState = null;
