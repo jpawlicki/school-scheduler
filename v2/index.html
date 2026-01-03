@@ -93,11 +93,20 @@
       }
 
       /* Placeholder styles for future sections */
-      #settingseditor, #blockeditor, #resourceeditor, #scheduler, #linker {
+      #settingseditor, #blockeditor, #resourceeditor, #linker {
         padding: 20px;
         flex-grow: 1;
         overflow: auto;
         background-color: #f9fafb;
+      }
+
+      /* Scheduler View Style override for full width/height */
+      #scheduler {
+        flex-grow: 1;
+        overflow: hidden; /* SVG container handles scroll */
+        background-color: #ffffff;
+        display: flex;
+        flex-direction: column;
       }
 
       /* --- Table Styles --- */
@@ -261,6 +270,26 @@
       .linker-table tr:hover td.col-hover {
         background-color: #dbeafe; /* darker blue-ish */
       }
+
+      /* --- Scheduler Block Styles --- */
+      .schedule-block {
+        cursor: grab;
+        transition: filter 0.1s, opacity 0.1s;
+      }
+      .schedule-block:hover {
+        filter: brightness(0.95);
+      }
+      .schedule-block.dragging {
+        cursor: grabbing;
+        opacity: 0.8;
+        filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+      }
+      .schedule-block.locked {
+        cursor: not-allowed;
+      }
+      .schedule-block.locked:hover {
+        filter: none;
+      }
     </style>
   </head>
   <body>
@@ -347,16 +376,17 @@
     </div>
     
     <div id="scheduler">
-      <!-- Main Scheduler View -->
-      <div id="blocklist">
-         <!-- Block list -->
-      </div>
-      <div id="timeline">
-        <!-- Timeline -->
-        <p style="color: #666; padding: 20px;">Scheduler view (Timeline goes here)</p>
-      </div>
-      <div id="resourcelist">
-         <!-- Resource list -->
+      <!-- Main Scheduler View - Step 3: Overlap Handling -->
+      <div id="scheduleContainer" style="flex-grow: 1; overflow: auto; position: relative; width: 100%; height: 100%;">
+        <svg id="scheduleSvg" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <pattern id="stripedPattern" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+                    <line x1="0" y1="0" x2="0" y2="10" stroke="#374151" stroke-width="2" opacity="0.1" />
+                </pattern>
+            </defs>
+            <g id="gridGroup"></g>
+            <g id="blocksGroup"></g>
+        </svg>
       </div>
     </div>
     
@@ -546,6 +576,28 @@
         notifyBlockListeners(id);
       }
 
+      function moveBlockSlot(blockId, slotIndex, newDay, newTime) {
+        const block = data.blocks[blockId];
+        if (!block) return;
+        const slot = block.slots[slotIndex];
+        if (!slot) return;
+        
+        // Clamping logic
+        if (newDay < 0) newDay = 0;
+        if (newDay >= data.days) newDay = data.days - 1;
+        if (newTime < 0) newTime = 0;
+        // Ensure block fits within the day (24 hours)
+        if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
+
+        // No change check
+        if (slot.day === newDay && slot.time === newTime) return;
+
+        recordStateForUndo();
+        slot.day = newDay;
+        slot.time = newTime;
+        notifyAllListeners();
+      }
+
       function deleteBlock(id) {
         if (!data.blocks[id]) return;
         recordStateForUndo();
@@ -658,7 +710,7 @@
       
       // Expose functions to window for console testing if needed
       window.scheduler = {
-        addBlock, addResource, undo, redo, data, loadData, setBlockDuration
+        addBlock, addResource, undo, redo, data, loadData, setBlockDuration, moveBlockSlot
       };
 
       // ==========================================
@@ -682,6 +734,12 @@
         const settingDaysInput = document.getElementById('settingDaysInput');
 
         const linkerTable = document.getElementById('linkerTable');
+
+        // Scheduler View Elements
+        const scheduleContainer = document.getElementById('scheduleContainer');
+        const scheduleSvg = document.getElementById('scheduleSvg');
+        const gridGroup = document.getElementById('gridGroup');
+        const blocksGroup = document.getElementById('blocksGroup');
 
         // --- Logic to Render Resource Table ---
 
@@ -777,7 +835,7 @@
              if (val > 0) setBlockDuration(id, val * 60); // Minutes to Seconds
           });
           durTd.appendChild(durInput);
-          tr.appendChild(durTd);
+          tr.appendChild(durInput);
 
           // Occurrences Cell
           const occTd = document.createElement('td');
@@ -852,12 +910,6 @@
             span.textContent = block.name;
             th.appendChild(span);
             headerRow.appendChild(th);
-
-            // Listen to block name changes to update header
-            // Note: This adds a listener every render. In a full app we'd clean up.
-            // But renderLinker clears DOM, so old listeners are just detached closures (mem leak potential in long run).
-            // For this scope, it's acceptable, or we could track cleanup.
-            // Better: rely on view switch/undo re-rendering.
           });
           linkerTable.appendChild(headerRow);
 
@@ -928,6 +980,320 @@
         });
 
 
+        // --- Scheduler Grid Logic ---
+        
+        const PIXELS_PER_HOUR = 60; // 1 min = 1 px
+        const TOTAL_HEIGHT = 24 * PIXELS_PER_HOUR; // 1440px
+
+        function renderGrid() {
+            gridGroup.innerHTML = '';
+            
+            const width = scheduleContainer.clientWidth;
+            if (width === 0) return; // Not visible yet
+
+            scheduleSvg.setAttribute('width', width);
+            scheduleSvg.setAttribute('height', TOTAL_HEIGHT);
+            
+            const numDays = data.days;
+            const dayWidth = width / numDays;
+
+            // Draw Day Headers (Background Text)
+            for (let i = 0; i < numDays; i++) {
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                const centerX = (i * dayWidth) + (dayWidth / 2);
+                text.setAttribute('x', centerX);
+                text.setAttribute('y', 50); // Near top
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('dominant-baseline', 'middle');
+                text.setAttribute('font-size', '32');
+                text.setAttribute('font-weight', 'bold');
+                text.setAttribute('fill', '#f3f4f6'); // Very light gray (matches bg hover, subtle)
+                text.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
+                text.textContent = `Day ${i + 1}`;
+                gridGroup.appendChild(text);
+            }
+            
+            // Draw Day Columns (Vertical Lines)
+            for (let i = 1; i < numDays; i++) {
+                const x = i * dayWidth;
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute('x1', x);
+                line.setAttribute('y1', 0);
+                line.setAttribute('x2', x);
+                line.setAttribute('y2', TOTAL_HEIGHT);
+                line.setAttribute('stroke', '#e5e7eb'); // light gray
+                line.setAttribute('stroke-width', '1');
+                gridGroup.appendChild(line);
+            }
+
+            // Draw Time Rows (Horizontal Lines)
+            for (let h = 0; h <= 24; h++) {
+                const y = h * PIXELS_PER_HOUR;
+                
+                // Major Tick (Hour)
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute('x1', 0);
+                line.setAttribute('y1', y);
+                line.setAttribute('x2', width);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', '#d1d5db'); // gray
+                line.setAttribute('stroke-width', '1');
+                gridGroup.appendChild(line);
+
+                // Time Label
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute('x', 5);
+                text.setAttribute('y', y); // Align exactly on y
+                text.setAttribute('dominant-baseline', 'middle'); // Vertically centered
+                text.setAttribute('font-size', '11');
+                text.setAttribute('font-weight', '500');
+                text.setAttribute('fill', '#6b7280');
+                
+                // Outline strokes for readability
+                text.setAttribute('stroke', 'white');
+                text.setAttribute('stroke-width', '3');
+                text.setAttribute('paint-order', 'stroke');
+                
+                text.textContent = `${h}:00`;
+                gridGroup.appendChild(text);
+
+                if (h < 24) {
+                    // Minor Ticks (10 mins)
+                    for (let m = 10; m < 60; m += 10) {
+                         const ym = y + (m / 60) * PIXELS_PER_HOUR;
+                         const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                         minLine.setAttribute('x1', 0);
+                         minLine.setAttribute('y1', ym);
+                         minLine.setAttribute('x2', width);
+                         minLine.setAttribute('y2', ym);
+                         minLine.setAttribute('stroke', '#f3f4f6'); // very light gray
+                         minLine.setAttribute('stroke-width', '1');
+                         gridGroup.appendChild(minLine);
+                    }
+                }
+            }
+        }
+        
+        function renderBlocks() {
+            blocksGroup.innerHTML = '';
+            
+            const width = scheduleContainer.clientWidth;
+            if (width === 0) return;
+
+            const numDays = data.days;
+            const dayWidth = width / numDays;
+            const totalSeconds = 24 * 60 * 60;
+
+            // 1. Flatten all slots into a list with metadata
+            let allSlots = [];
+            Object.entries(data.blocks).forEach(([id, block]) => { // Use entries to get ID
+                block.slots.forEach((slot, index) => {
+                    if (slot.day < numDays) {
+                        allSlots.push({
+                            ...slot,
+                            duration: block.duration,
+                            name: block.name,
+                            blockId: parseInt(id), // Changed line
+                            originalIndex: index // Capture index for drag logic
+                        });
+                    }
+                });
+            });
+
+            // 2. Process each day
+            for (let d = 0; d < numDays; d++) {
+                // Get slots for this day
+                let daySlots = allSlots.filter(s => s.day === d);
+                
+                // Sort by start time, then duration (desc) to place larger items first
+                daySlots.sort((a, b) => {
+                    if (a.time !== b.time) return a.time - b.time;
+                    return b.duration - a.duration;
+                });
+
+                // Group into overlapping clusters
+                let clusters = [];
+                let currentCluster = [];
+                let clusterEnd = -1;
+
+                daySlots.forEach(slot => {
+                    const slotEnd = slot.time + slot.duration;
+                    
+                    if (currentCluster.length === 0) {
+                        currentCluster.push(slot);
+                        clusterEnd = slotEnd;
+                    } else {
+                        // If this slot starts before the cluster ends, it overlaps (or is contiguous)
+                        if (slot.time < clusterEnd) {
+                            currentCluster.push(slot);
+                            if (slotEnd > clusterEnd) clusterEnd = slotEnd;
+                        } else {
+                            clusters.push(currentCluster);
+                            currentCluster = [slot];
+                            clusterEnd = slotEnd;
+                        }
+                    }
+                });
+                if (currentCluster.length > 0) clusters.push(currentCluster);
+
+                // Process clusters to assign columns
+                clusters.forEach(cluster => {
+                    let columns = []; // array of end times for each column
+                    
+                    cluster.forEach(slot => {
+                        // Find first column where this slot fits
+                        let placed = false;
+                        for (let i = 0; i < columns.length; i++) {
+                            if (columns[i] <= slot.time) {
+                                slot.colIndex = i;
+                                columns[i] = slot.time + slot.duration;
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (!placed) {
+                            slot.colIndex = columns.length;
+                            columns.push(slot.time + slot.duration);
+                        }
+                    });
+
+                    // Render slots in this cluster
+                    const numCols = columns.length;
+                    
+                    cluster.forEach(slot => {
+                        const colX = (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
+                        const y = (slot.time / totalSeconds) * TOTAL_HEIGHT;
+                        const h = (slot.duration / totalSeconds) * TOTAL_HEIGHT;
+                        
+                        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                        g.setAttribute("class", "schedule-block " + (slot.locked ? "locked" : ""));
+                        g.setAttribute("data-block-id", slot.blockId);
+                        g.setAttribute("data-slot-index", slot.originalIndex);
+                        
+                        // Setup for interaction
+                        g.addEventListener('mousedown', (e) => {
+                            if (slot.locked) return;
+                            handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, g);
+                        });
+                        
+                        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        rect.setAttribute('x', colX + 2); // +2 margin
+                        rect.setAttribute('y', y);
+                        rect.setAttribute('width', (dayWidth / numCols) - 4); // 4px gap total
+                        rect.setAttribute('height', h);
+                        rect.setAttribute('rx', 4);
+                        rect.setAttribute('ry', 4);
+
+                        if (slot.locked) {
+                            rect.setAttribute('fill', 'url(#stripedPattern)');
+                            rect.setAttribute('stroke', '#374151');
+                        } else {
+                            rect.setAttribute('fill', '#60a5fa');
+                            rect.setAttribute('stroke', '#2563eb');
+                        }
+                        rect.setAttribute('stroke-width', 1);
+                        rect.setAttribute('opacity', 0.9);
+                        
+                        g.appendChild(rect);
+
+                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        text.setAttribute('x', colX + 6);
+                        text.setAttribute('y', y + 16);
+                        text.setAttribute('font-size', '12');
+                        text.setAttribute('font-family', 'sans-serif');
+                        text.setAttribute('fill', slot.locked ? '#374151' : 'white');
+                        text.setAttribute('pointer-events', 'none'); 
+                        text.textContent = slot.name;
+
+                        g.appendChild(text);
+                        blocksGroup.appendChild(g);
+                    });
+                });
+            }
+        }
+
+        // --- Drag and Drop Logic ---
+        
+        let dragState = null;
+
+        function handleDragStart(e, blockId, slotIndex, startDay, startTime, element) {
+            dragState = {
+                blockId: blockId,
+                slotIndex: slotIndex,
+                startX: e.clientX,
+                startY: e.clientY,
+                element: element,
+                startTransform: element.getAttribute('transform') || '',
+                // Calculate initial day offset to calculate delta later
+                // Just relying on delta movement is simpler than full coordinate reversal
+            };
+            element.classList.add('dragging');
+            // Bring to front
+            blocksGroup.appendChild(element); 
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            if (!dragState) return;
+            e.preventDefault();
+
+            const dx = e.clientX - dragState.startX;
+            const dy = e.clientY - dragState.startY;
+
+            // Visual update (ghosting/direct movement)
+            dragState.element.setAttribute('transform', `translate(${dx}, ${dy})`);
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (!dragState) return;
+            
+            const dx = e.clientX - dragState.startX;
+            const dy = e.clientY - dragState.startY;
+            
+            // Calculate logic updates
+            const width = scheduleContainer.clientWidth;
+            const dayWidth = width / data.days;
+            
+            // Calculate Day Change
+            // Rounds to nearest day column
+            const dayChange = Math.round(dx / dayWidth);
+            
+            // Calculate Time Change
+            // 1 pixel = 60 seconds (since TOTAL_HEIGHT = 24 * 60)
+            // But we want to snap to 10 mins (600 seconds)
+            // Time change in seconds = dy * (totalSeconds / TOTAL_HEIGHT)
+            // TOTAL_HEIGHT = 1440, totalSeconds = 86400. Ratio = 60.
+            const timeChangeSeconds = dy * 60;
+            const snappedTimeChange = Math.round(timeChangeSeconds / 600) * 600;
+
+            const block = getBlock(dragState.blockId);
+            const slot = block.slots[dragState.slotIndex];
+            
+            const newDay = slot.day + dayChange;
+            const newTime = slot.time + snappedTimeChange;
+
+            // Clean up visual state
+            dragState.element.classList.remove('dragging');
+            dragState.element.setAttribute('transform', ''); // Reset visual transform, let renderer handle position
+            
+            // Commit change
+            moveBlockSlot(dragState.blockId, dragState.slotIndex, newDay, newTime);
+            
+            // Re-render blocks to show updated position
+            renderBlocks();
+            
+            dragState = null;
+        });
+
+
+        // Handle window resize for Grid
+        window.addEventListener('resize', () => {
+            if (document.getElementById('scheduler').style.display !== 'none') {
+                renderGrid();
+                renderBlocks();
+            }
+        });
+
+
         // --- Settings Logic ---
 
         function updateSettingsView() {
@@ -945,6 +1311,11 @@
             e.target.value = val;
             
             setNumberOfDays(val);
+            // Refresh grid if visible
+            if (document.getElementById('scheduler').style.display !== 'none') {
+                renderGrid();
+                renderBlocks();
+            }
         });
 
         // Initialize Settings
@@ -972,6 +1343,9 @@
         // Initialize tables
         renderResourceList();
         renderBlockList();
+        // Initialize Grid
+        renderGrid();
+        renderBlocks();
 
         // --- Event Listeners ---
 
@@ -1000,7 +1374,8 @@
              const row = createBlockRow(id);
              if (row) blockTableBody.appendChild(row);
            }
-           if (linker.style.display !== 'none') renderLinker();
+           if (linker.style?.display !== 'none') renderLinker();
+           if (scheduler.style?.display !== 'none') renderBlocks();
         };
         
         const onNewResource = (id) => {
@@ -1040,11 +1415,21 @@
           
           // 2. Show selected view
           if (views[viewName]) {
-            views[viewName].style.display = 'block';
+            views[viewName].style.display = 'flex'; // Changed to Flex for scheduler
+            if (viewName !== 'scheduler') {
+                views[viewName].style.display = 'block'; // Block for others
+            }
             
             // Special initialization for views
             if (viewName === 'linker') {
               renderLinker();
+            }
+            if (viewName === 'scheduler') {
+              // Wait for display change to take effect before measuring width
+              requestAnimationFrame(() => {
+                renderGrid();
+                renderBlocks();
+              });
             }
           }
 
@@ -1112,7 +1497,11 @@
               blockTableBody.innerHTML = '';
               loadData(loadedData, onNewBlock, onNewResource);
               updateSettingsView(); // Refresh settings UI
-              if (linker.style.display !== 'none') renderLinker();
+              if (linker.style?.display !== 'none') renderLinker();
+              if (scheduler.style?.display !== 'none') {
+                renderGrid(); // Refresh grid
+                renderBlocks();
+              }
             } catch (err) {
               console.error(err);
               alert("Failed to parse JSON file.");
@@ -1127,12 +1516,20 @@
           undo(onNewBlock, onNewResource);
           updateSettingsView(); // Refresh settings UI on undo
           if (linker.style.display !== 'none') renderLinker();
+          if (scheduler.style.display !== 'none') {
+            renderGrid(); // Refresh grid
+            renderBlocks();
+          }
         });
 
         redoBtn.addEventListener('click', () => {
           redo(onNewBlock, onNewResource);
           updateSettingsView(); // Refresh settings UI on redo
           if (linker.style.display !== 'none') renderLinker();
+          if (scheduler.style.display !== 'none') {
+             renderGrid(); // Refresh grid
+             renderBlocks();
+          }
         });
       });
     </script>
