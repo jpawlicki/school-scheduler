@@ -196,7 +196,22 @@
     
     <div id="settingseditor" style="display:none;">
       <h3>Settings</h3>
-      <!-- Settings content -->
+      <table class="editor-table" style="max-width: 500px;">
+        <thead>
+          <tr>
+            <th style="width: 250px;">Setting</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+             <td>Schedule Length (Days)</td>
+             <td>
+               <input type="number" id="settingDaysInput" class="editor-input" min="1" max="7" value="1">
+             </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
     
     <div id="blockeditor" style="display:none;">
@@ -567,6 +582,8 @@
         const addBlockBtn = document.getElementById('addBlockBtn');
         const blockTableBody = document.getElementById('blockTableBody');
 
+        const settingDaysInput = document.getElementById('settingDaysInput');
+
         // --- Logic to Render Resource Table ---
 
         function createResourceRow(id) {
@@ -711,6 +728,29 @@
 
           return tr;
         }
+
+        // --- Settings Logic ---
+
+        function updateSettingsView() {
+           if (settingDaysInput) {
+               settingDaysInput.value = data.days;
+           }
+        }
+
+        settingDaysInput.addEventListener('change', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val) || val < 1) val = 1;
+            if (val > 7) val = 7;
+            
+            // Update UI to clamped value
+            e.target.value = val;
+            
+            setNumberOfDays(val);
+        });
+
+        // Initialize Settings
+        updateSettingsView();
+
 
         function renderResourceList() {
            resourceTableBody.innerHTML = '';
@@ -860,6 +900,7 @@
               resourceTableBody.innerHTML = '';
               blockTableBody.innerHTML = '';
               loadData(loadedData, onNewBlock, onNewResource);
+              updateSettingsView(); // Refresh settings UI
             } catch (err) {
               console.error(err);
               alert("Failed to parse JSON file.");
@@ -872,10 +913,12 @@
 
         undoBtn.addEventListener('click', () => {
           undo(onNewBlock, onNewResource);
+          updateSettingsView(); // Refresh settings UI on undo
         });
 
         redoBtn.addEventListener('click', () => {
           redo(onNewBlock, onNewResource);
+          updateSettingsView(); // Refresh settings UI on redo
         });
       });
     </script>
