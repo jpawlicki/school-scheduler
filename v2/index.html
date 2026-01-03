@@ -1,73 +1,566 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <script src="scheduler.js" type="module"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduler</title>
     <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        background-color: #f9fafb;
+      }
+      
+      #toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 20px;
+        background-color: #ffffff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      /* Tools groups (Left and Right) */
+      #basictools, #schedulewindowtools {
+        display: flex;
+        gap: 8px;
+        margin-right: 8px;
+      }
+
+      /* General Action Button Styles */
+      button {
+        padding: 6px 12px;
+        background-color: white;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+
+      button:hover {
+        background-color: #f3f4f6;
+        border-color: #9ca3af;
+        color: #111827;
+      }
+
+      button:active {
+        background-color: #e5e7eb;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+      }
+
+      /* View Switcher (Center) - Segmented Control Style */
+      #windowselect {
+        display: flex;
+        background-color: #f3f4f6;
+        padding: 4px;
+        border-radius: 8px;
+        gap: 2px;
+      }
+
+      /* Specific styles for view switcher buttons to override generic button styles */
+      #windowselect button {
+        background-color: transparent;
+        border: 1px solid transparent;
+        box-shadow: none;
+        color: #6b7280;
+        padding: 6px 16px;
+        border-radius: 6px;
+      }
+
+      #windowselect button:hover {
+        background-color: rgba(255, 255, 255, 0.6);
+        color: #374151;
+        border-color: transparent;
+      }
+
+      /* Active State for View Switcher */
+      #windowselect button.active-view-btn {
+        background-color: white;
+        color: #111827;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        border-color: transparent;
+      }
+
+      #windowselect button.active-view-btn:hover {
+        background-color: white;
+      }
+
+      /* Placeholder styles for future sections */
+      #settingseditor, #blockeditor, #resourceeditor, #scheduler, #linker {
+        padding: 20px;
+        flex-grow: 1;
+        overflow: auto;
+        background-color: #f9fafb;
+      }
     </style>
   </head>
   <body>
     <div id="toolbar">
       <div id="basictools">
-        <!-- TODO: Help button, which could link to a page with a guide. -->
-        <!-- TODO: Save to file button. Disabled until a modification is made.
-             -->
-        <!-- TODO: Load from file button. Should notify if there are unsaved
-             modifications. -->
-        <!-- TODO: Undo button. -->
-        <!-- TODO: Redo button. -->
+        <button id="helpBtn" title="Help">Help</button>
+        <button id="saveBtn" title="Save Schedule">Save</button>
+        <button id="loadBtn" title="Load Schedule">Load</button>
+        <input type="file" id="fileInput" accept=".json" style="display:none;" />
+        <button id="undoBtn" title="Undo">Undo</button>
+        <button id="redoBtn" title="Redo">Redo</button>
+      </div>
+      <div id="schedulewindowtools"> 
+        <button id="sortBtn">Sort</button>
+        <button id="shuffleBtn">Shuffle</button>
       </div>
       <div id="windowselect">
-        <!-- TODO: Some kind of switch, tabs, or toggle for moving the main view
-             between the settingseditor, blockeditor, resourceeditor, scheduler,
-             linker. -->
-      </div>
-      <div id="schedulewindowtools"> <!-- Only shown in scheduler view. -->
-        <!-- TODO: Sort button. The button should generate a valid schedule
-             with some kind of orderly presentation. Locked blocks are not
-             moved. -->
-        <!-- TODO: Shuffle button. The shuffle tool should reshuffle the times
-             of all unlocked blocks, but satisfy constraints if possible. -->
+        <button id="viewSchedulerBtn">Scheduler</button>
+        <button id="viewBlocksBtn">Blocks</button>
+        <button id="viewResourcesBtn">Resources</button>
+        <button id="viewLinkerBtn">Linker</button>
+        <button id="viewSettingsBtn">Settings</button>
       </div>
     </div>
-    <div id="settingseditor">
-      <!-- TODO: A table of schedule-wide settings. Each row is a setting and
-           value. The only setting right now is the number of days in the
-           schedule, which should be between 1 and 7 (inclusive). Editing the
-           value should update the model. -->
+    
+    <div id="settingseditor" style="display:none;">
+      <h3>Settings</h3>
+      <!-- Settings content -->
     </div>
-    <div id="blockeditor">
-      <!-- TODO: A table of all blocks. Each row has the block id (immutable),
-           name, duration, and number of occurrences. Editing these values
-           updates the model. Rows may be deleted. New rows may be added. -->
+    <div id="blockeditor" style="display:none;">
+       <h3>Block Editor</h3>
+       <!-- Block editor content -->
     </div>
-    <div id="resourceeditor">
-      <!-- TODO: A table of all resources. Each row has the resource id
-           (immutable), and name of the resource. Editing these values updates
-           the model. Rows may be deleted. New rows may be added.  -->
+    <div id="resourceeditor" style="display:none;">
+       <h3>Resource Editor</h3>
+       <!-- Resource editor content -->
     </div>
     <div id="scheduler">
+      <!-- Main Scheduler View -->
       <div id="blocklist">
-        <!-- TODO: list of all blocks. Each element has a name and edit icon
-             (that appears on mousover. Clicking edit should show a dialog that
-             allows the user to edit the name, duration, and number of
-             occurrences of the block. -->
+         <!-- Block list -->
       </div>
-      <div>
-        <!-- TODO: A timeline display of blocks. Each day is a column, with
-             time flowing downward. Blocks can be clicked to toggle
-             locked/unlocked state. Blocks can be dragged to adjust their
-             time and day. Multiple blocks may be concurrent, and should split
-             the space between them if possible, overlapping if not. -->
+      <div id="timeline">
+        <!-- Timeline -->
+        <p style="color: #666; padding: 20px;">Scheduler view (Timeline goes here)</p>
       </div>
       <div id="resourcelist">
-        <!-- TODO: list of all resources. Clicking a resource should show a
-             dialog that allows the user to edit the name of the resource. -->
+         <!-- Resource list -->
       </div>
     </div>
-    <div id="linker">
-      <!-- TODO: a table with blocks as columns and resources as rows, and
-           checkboxes in each cell. Checking the box creates a "MUST" link
-           between the resource and block. -->
+    <div id="linker" style="display:none;">
+       <h3>Linker</h3>
+       <!-- Linker content -->
     </div>
+
+    <script>
+      // ==========================================
+      // SCHEDULER LOGIC (Formerly scheduler.js)
+      // ==========================================
+
+      // Stores the overall state of the scheduler.
+      let data = {
+        days: 1,
+        blocks: {},
+        resources: {},
+      };
+
+      // For debugging purposes.
+      window.data = data;
+
+      // ======== Private functions and variables:
+
+      let modificationListeners = {
+        blockListeners: {},
+        resourceListeners: {},
+      };
+
+      let undoStack = [];
+      let redoStack = [];
+
+      function getNextBlockId() {
+        let id = 1;
+        while (data.blocks[id]) { id++; }
+        return id;
+      }
+
+      function getNextResourceId() {
+        let id = 1;
+        while (data.resources[id]) { id++; }
+        return id;
+      }
+
+      function recordStateForUndo() {
+        undoStack.push(JSON.parse(JSON.stringify(data)));
+        redoStack = [];
+        console.log("State recorded. Undo stack size:", undoStack.length);
+      }
+
+      function deepClone(obj) {
+        return JSON.parse(JSON.stringify(obj));
+      }
+
+      function notifyBlockListeners(id) {
+        if (modificationListeners.blockListeners[id]) {
+          modificationListeners.blockListeners[id].forEach(cb => cb());
+        }
+      }
+
+      function notifyResourceListeners(id) {
+        if (modificationListeners.resourceListeners[id]) {
+          modificationListeners.resourceListeners[id].forEach(cb => cb());
+        }
+      }
+
+      function notifyAllListeners() {
+        Object.keys(modificationListeners.blockListeners).forEach(id => notifyBlockListeners(id));
+        Object.keys(modificationListeners.resourceListeners).forEach(id => notifyResourceListeners(id));
+      }
+
+      function performStateSwap(popStack, pushStack, newBlockCallback, newResourceCallback) {
+        if (popStack.length === 0) {
+            console.log("Stack empty, nothing to do.");
+            return;
+        }
+
+        // 1. Push current state to the pushStack
+        pushStack.push(deepClone(data));
+
+        // 2. Pop new state from popStack and apply it
+        const prevState = data; 
+        const newState = popStack.pop();
+        data = newState;
+        window.data = data; 
+
+        // 3. Detect newly existing items
+        if (newBlockCallback) {
+          const oldKeys = new Set(Object.keys(prevState.blocks));
+          Object.keys(newState.blocks).forEach(id => {
+            if (!oldKeys.has(id)) {
+              newBlockCallback(parseInt(id));
+            }
+          });
+        }
+
+        if (newResourceCallback) {
+          const oldKeys = new Set(Object.keys(prevState.resources));
+          Object.keys(newState.resources).forEach(id => {
+            if (!oldKeys.has(id)) {
+              newResourceCallback(parseInt(id));
+            }
+          });
+        }
+
+        // 4. Notify all listeners to refresh UI
+        notifyAllListeners();
+        console.log("State restored.");
+      }
+
+      // ======== Public API:
+
+      function listenToResource(id, callback) {
+        if (!modificationListeners.resourceListeners[id]) {
+          modificationListeners.resourceListeners[id] = [];
+        }
+        modificationListeners.resourceListeners[id].push(callback);
+        return () => {
+          const list = modificationListeners.resourceListeners[id];
+          if (list) {
+            const idx = list.indexOf(callback);
+            if (idx !== -1) list.splice(idx, 1);
+          }
+        };
+      }
+
+      function addBlock() {
+        recordStateForUndo();
+        const id = getNextBlockId();
+        data.blocks[id] = {
+          name: `Block ${id}`,
+          duration: 3600,
+          slots: [{ day: 0, time: 0, locked: false }]
+        };
+        return id;
+      }
+
+      function listenToBlock(id, callback) {
+        if (!modificationListeners.blockListeners[id]) {
+          modificationListeners.blockListeners[id] = [];
+        }
+        modificationListeners.blockListeners[id].push(callback);
+        return () => {
+          const list = modificationListeners.blockListeners[id];
+          if (list) {
+            const idx = list.indexOf(callback);
+            if (idx !== -1) list.splice(idx, 1);
+          }
+        };
+      }
+
+      function renameBlock(id, name) {
+        const block = data.blocks[id];
+        if (!block) return;
+        if (block.name === name) return;
+        recordStateForUndo();
+        block.name = name;
+        notifyBlockListeners(id);
+      }
+
+      function setBlockOccurrences(id, occurrences) {
+        const block = data.blocks[id];
+        if (!block) return;
+        if (block.slots.length === occurrences) return;
+        recordStateForUndo();
+        if (occurrences < block.slots.length) {
+          block.slots = block.slots.slice(0, occurrences);
+        } else {
+          while (block.slots.length < occurrences) {
+            block.slots.push({ day: 0, time: 0, locked: false });
+          }
+        }
+        notifyBlockListeners(id);
+      }
+
+      function deleteBlock(id) {
+        if (!data.blocks[id]) return;
+        recordStateForUndo();
+        for (const resId in data.resources) {
+          const resource = data.resources[resId];
+          const initialLen = resource.links.length;
+          resource.links = resource.links.filter(link => link.block !== id);
+          if (resource.links.length !== initialLen) {
+            notifyResourceListeners(resId);
+          }
+        }
+        delete data.blocks[id];
+        notifyBlockListeners(id);
+      }
+
+      function addResource() {
+        recordStateForUndo();
+        const id = getNextResourceId();
+        data.resources[id] = { name: `R${id}`, links: [] };
+        return id;
+      }
+
+      function renameResource(id, name) {
+        const resource = data.resources[id];
+        if (!resource) return;
+        if (resource.name === name) return;
+        recordStateForUndo();
+        resource.name = name;
+        notifyResourceListeners(id);
+      }
+
+      function deleteResource(id) {
+        if (!data.resources[id]) return;
+        recordStateForUndo();
+        delete data.resources[id];
+        notifyResourceListeners(id);
+      }
+
+      function link(resourceId, blockId) {
+        const resource = data.resources[resourceId];
+        const block = data.blocks[blockId];
+        if (!resource || !block) return;
+        if (resource.links.some(l => l.block === blockId && l.type === "MUST")) return;
+        recordStateForUndo();
+        resource.links.push({ type: "MUST", block: blockId });
+        notifyResourceListeners(resourceId);
+      }
+
+      function unlink(resourceId, blockId) {
+        const resource = data.resources[resourceId];
+        if (!resource) return;
+        const initialLen = resource.links.length;
+        const links = resource.links.filter(l => !(l.block === blockId && l.type === "MUST"));
+        if (links.length !== initialLen) {
+          recordStateForUndo();
+          resource.links = links;
+          notifyResourceListeners(resourceId);
+        }
+      }
+
+      function setNumberOfDays(days) {
+        if (days < 1) return;
+        if (data.days === days) return;
+        recordStateForUndo();
+        data.days = days;
+        Object.values(data.blocks).forEach(block => {
+          block.slots.forEach(slot => {
+            if (slot.day >= days) {
+              slot.day = slot.day % days;
+            }
+          });
+        });
+        notifyAllListeners();
+      }
+
+      function undo(newBlockCallback, newResourceCallback) {
+        performStateSwap(undoStack, redoStack, newBlockCallback, newResourceCallback);
+      }
+
+      function redo(newBlockCallback, newResourceCallback) {
+        performStateSwap(redoStack, undoStack, newBlockCallback, newResourceCallback);
+      }
+
+      // -- Serialization Functions --
+
+      function loadData(newData, newBlockCallback, newResourceCallback) {
+        // 1. Reset State
+        undoStack = [];
+        redoStack = [];
+        // Destroy existing listeners as they refer to old object IDs or UI elements that should be rebuilt
+        modificationListeners = { blockListeners: {}, resourceListeners: {} };
+
+        // 2. Load Data
+        data = newData;
+        window.data = data;
+
+        // 3. Notify callbacks for every item so UI can repopulate
+        if (newBlockCallback) {
+          Object.keys(data.blocks).forEach(id => newBlockCallback(parseInt(id)));
+        }
+        if (newResourceCallback) {
+          Object.keys(data.resources).forEach(id => newResourceCallback(parseInt(id)));
+        }
+        
+        console.log("Data loaded. Listeners and stack cleared.");
+      }
+
+      function getBlock(id) { return data.blocks[id]; }
+      function getResource(id) { return data.resources[id]; }
+      
+      // Expose functions to window for console testing if needed
+      window.scheduler = {
+        addBlock, addResource, undo, redo, data, loadData
+      };
+
+      // ==========================================
+      // UI INITIALIZATION
+      // ==========================================
+      
+      document.addEventListener('DOMContentLoaded', () => {
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+        const helpBtn = document.getElementById('helpBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const loadBtn = document.getElementById('loadBtn');
+        const fileInput = document.getElementById('fileInput');
+
+        // Placeholder callbacks for when undo/redo creates new items
+        // In the future, these will add rows to the Block/Resource editors
+        const onNewBlock = (id) => console.log('UI: New block detected:', id);
+        const onNewResource = (id) => console.log('UI: New resource detected:', id);
+
+        // --- View Switching Logic ---
+        
+        const views = {
+          scheduler: document.getElementById('scheduler'),
+          blocks: document.getElementById('blockeditor'),
+          resources: document.getElementById('resourceeditor'),
+          linker: document.getElementById('linker'),
+          settings: document.getElementById('settingseditor')
+        };
+
+        const viewBtns = {
+          scheduler: document.getElementById('viewSchedulerBtn'),
+          blocks: document.getElementById('viewBlocksBtn'),
+          resources: document.getElementById('viewResourcesBtn'),
+          linker: document.getElementById('viewLinkerBtn'),
+          settings: document.getElementById('viewSettingsBtn')
+        };
+
+        const scheduleTools = document.getElementById('schedulewindowtools');
+
+        function switchView(viewName) {
+          // 1. Hide all views
+          Object.values(views).forEach(el => el.style.display = 'none');
+          
+          // 2. Show selected view
+          if (views[viewName]) {
+            views[viewName].style.display = 'block';
+          }
+
+          // 3. Update buttons
+          Object.values(viewBtns).forEach(btn => btn.classList.remove('active-view-btn'));
+          if (viewBtns[viewName]) {
+            viewBtns[viewName].classList.add('active-view-btn');
+          }
+
+          // 4. Toggle Scheduler specific tools
+          if (viewName === 'scheduler') {
+            scheduleTools.style.display = 'flex';
+          } else {
+            scheduleTools.style.display = 'none';
+          }
+        }
+
+        // Add Listeners to View Buttons
+        Object.keys(viewBtns).forEach(key => {
+          viewBtns[key].addEventListener('click', () => switchView(key));
+        });
+
+        // Initialize default view
+        switchView('scheduler');
+
+
+        // --- Basic Tools ---
+        
+        helpBtn.addEventListener('click', () => {
+          window.open('help.html', '_blank');
+        });
+
+        saveBtn.addEventListener('click', () => {
+          const jsonStr = JSON.stringify(data, null, 2);
+          const blob = new Blob([jsonStr], {type: 'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'schedule.json';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+
+        loadBtn.addEventListener('click', () => {
+          fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              const loadedData = JSON.parse(event.target.result);
+              // Basic validation could go here
+              if (!loadedData.blocks || !loadedData.resources) {
+                alert("Invalid schedule file format.");
+                return;
+              }
+              loadData(loadedData, onNewBlock, onNewResource);
+            } catch (err) {
+              console.error(err);
+              alert("Failed to parse JSON file.");
+            }
+            // Reset input so same file can be selected again if needed
+            fileInput.value = ''; 
+          };
+          reader.readAsText(file);
+        });
+
+        undoBtn.addEventListener('click', () => {
+          undo(onNewBlock, onNewResource);
+        });
+
+        redoBtn.addEventListener('click', () => {
+          redo(onNewBlock, onNewResource);
+        });
+      });
+    </script>
   </body>
 </html>
