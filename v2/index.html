@@ -290,6 +290,13 @@
       .schedule-block.locked:hover {
         filter: none;
       }
+      /* Conflict Highlighting */
+      .schedule-block.conflict-hazard rect {
+        stroke: #dc2626 !important; /* Red-600 */
+        stroke-width: 2px !important;
+        stroke-dasharray: 4;
+        fill: #fecaca !important; /* Red-200 */
+      }
     </style>
   </head>
   <body>
@@ -386,6 +393,7 @@
             </defs>
             <g id="gridGroup"></g>
             <g id="blocksGroup"></g>
+            <g id="conflictsGroup"></g>
         </svg>
       </div>
     </div>
@@ -681,6 +689,104 @@
         notifyAllListeners();
       }
 
+      function getConflicts() {
+        const conflicts = [];
+        const resourceIds = Object.keys(data.resources);
+
+        resourceIds.forEach(resId => {
+          const resource = data.resources[resId];
+          // Get all blocks linked to this resource
+          const linkedBlockIds = resource.links
+            .filter(l => l.type === 'MUST')
+            .map(l => l.block);
+          
+          // Collect all slots from these blocks
+          const slots = [];
+          linkedBlockIds.forEach(blockId => {
+            const block = data.blocks[blockId];
+            if (block) {
+              block.slots.forEach((slot, slotIndex) => {
+                slots.push({
+                  blockId: parseInt(blockId),
+                  slotIndex: slotIndex,
+                  day: slot.day,
+                  start: slot.time,
+                  end: slot.time + block.duration,
+                  name: block.name
+                });
+              });
+            }
+          });
+
+          // Check for overlaps
+          for (let i = 0; i < slots.length; i++) {
+            for (let j = i + 1; j < slots.length; j++) {
+              const s1 = slots[i];
+              const s2 = slots[j];
+
+              if (s1.day === s2.day) {
+                // Overlap condition: StartA < EndB && EndA > StartB
+                if (s1.start < s2.end && s1.end > s2.start) {
+                  // Avoid duplicates: push unique pair
+                  conflicts.push({
+                    resourceName: resource.name,
+                    slotA: s1,
+                    slotB: s2
+                  });
+                }
+              }
+            }
+          }
+        });
+        return conflicts;
+      }
+
+      function getPotentialConflicts(blockId, slotIndex, day, time) {
+        const conflicts = [];
+        const movingBlock = data.blocks[blockId];
+        if (!movingBlock) return [];
+        const movingDuration = movingBlock.duration;
+        const start = time;
+        const end = time + movingDuration;
+
+        // Find resources linked to this block
+        const linkedResourceIds = Object.keys(data.resources).filter(resId => {
+          return data.resources[resId].links.some(l => l.block === blockId && l.type === 'MUST');
+        });
+
+        linkedResourceIds.forEach(resId => {
+          const resource = data.resources[resId];
+          // Find all blocks linked to this resource
+          const otherLinkedBlockIds = resource.links
+            .filter(l => l.type === 'MUST')
+            .map(l => l.block);
+
+          otherLinkedBlockIds.forEach(otherBlockId => {
+            const otherBlock = data.blocks[otherBlockId];
+            if (otherBlock) {
+              otherBlock.slots.forEach((slot, sIndex) => {
+                // Skip the specific slot being moved
+                if (parseInt(otherBlockId) === blockId && sIndex === slotIndex) return;
+
+                if (slot.day === day) {
+                  const otherStart = slot.time;
+                  const otherEnd = slot.time + otherBlock.duration;
+
+                  if (start < otherEnd && end > otherStart) {
+                      conflicts.push({
+                       resourceName: resource.name,
+                       blockId: parseInt(otherBlockId),
+                       slotIndex: sIndex
+                      });
+                  }
+                }
+              });
+            }
+          });
+        });
+        return conflicts;
+      }
+
       function undo(newBlockCallback, newResourceCallback) {
         performStateSwap(undoStack, redoStack, newBlockCallback, newResourceCallback);
       }
@@ -718,7 +824,7 @@
       
       // Expose functions to window for console testing if needed
       window.scheduler = {
-        addBlock, addResource, undo, redo, data, loadData, setBlockDuration, moveBlockSlot
+        addBlock, addResource, undo, redo, data, loadData, setBlockDuration, moveBlockSlot, getConflicts, getPotentialConflicts
       };
 
       // ==========================================
@@ -748,6 +854,7 @@
         const scheduleSvg = document.getElementById('scheduleSvg');
         const gridGroup = document.getElementById('gridGroup');
         const blocksGroup = document.getElementById('blocksGroup');
+        const conflictsGroup = document.getElementById('conflictsGroup');
 
         // --- Logic to Render Resource Table ---
 
@@ -1082,6 +1189,185 @@
             }
         }
         
+        function renderConflicts() {
+            conflictsGroup.innerHTML = '';
+            const conflicts = getConflicts();
+            
+            // Group conflicts by the pair of blocks involved to combine labels
+            const groupedConflicts = {};
+
+            conflicts.forEach(conflict => {
+                // Create a unique key for the pair of blocks (BlockID-SlotIndex)
+                const idA = `${conflict.slotA.blockId}-${conflict.slotA.slotIndex}`;
+                const idB = `${conflict.slotB.blockId}-${conflict.slotB.slotIndex}`;
+                
+                // Deterministic order for key so A-B matches B-A
+                const key = idA < idB ? `${idA}::${idB}` : `${idB}::${idA}`;
+
+                if (!groupedConflicts[key]) {
+                    groupedConflicts[key] = {
+                        slotA: conflict.slotA,
+                        slotB: conflict.slotB,
+                        resources: new Set()
+                    };
+                }
+                groupedConflicts[key].resources.add(conflict.resourceName);
+            });
+
+            // Iterate over grouped conflicts and draw one line per pair
+            Object.values(groupedConflicts).forEach(group => {
+                const { slotA, slotB, resources } = group;
+                // Combine resource names
+                const resourceLabel = Array.from(resources).join(', ');
+
+                const elA = document.querySelector(`.schedule-block[data-block-id="${slotA.blockId}"][data-slot-index="${slotA.slotIndex}"] rect`);
+                const elB = document.querySelector(`.schedule-block[data-block-id="${slotB.blockId}"][data-slot-index="${slotB.slotIndex}"] rect`);
+                
+                if (elA && elB) {
+                    // Get local coordinates relative to the SVG
+                    const xA = parseFloat(elA.getAttribute('x'));
+                    const yA = parseFloat(elA.getAttribute('y'));
+                    const wA = parseFloat(elA.getAttribute('width'));
+                    const hA = parseFloat(elA.getAttribute('height'));
+                    
+                    const xB = parseFloat(elB.getAttribute('x'));
+                    const yB = parseFloat(elB.getAttribute('y'));
+                    const wB = parseFloat(elB.getAttribute('width'));
+                    const hB = parseFloat(elB.getAttribute('height'));
+                    
+                    const cxA = xA + wA / 2;
+                    const cyA = yA + hA / 2;
+                    const cxB = xB + wB / 2;
+                    const cyB = yB + hB / 2;
+                    
+                    // Draw Line
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute('x1', cxA);
+                    line.setAttribute('y1', cyA);
+                    line.setAttribute('x2', cxB);
+                    line.setAttribute('y2', cyB);
+                    line.setAttribute('stroke', '#ef4444'); // Red-500
+                    line.setAttribute('stroke-width', '2');
+                    line.setAttribute('stroke-dasharray', '5,5');
+                    line.setAttribute('pointer-events', 'none');
+                    conflictsGroup.appendChild(line);
+                    
+                    // Draw Label at Midpoint
+                    const midX = (cxA + cxB) / 2;
+                    const midY = (cyA + cyB) / 2;
+                    
+                    const textG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    textG.setAttribute('transform', `translate(${midX}, ${midY})`);
+                    
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('font-size', '10');
+                    text.setAttribute('fill', '#dc2626'); // Red-600
+                    text.setAttribute('font-weight', 'bold');
+                    text.textContent = resourceLabel;
+                    
+                    text.setAttribute('stroke', 'white');
+                    text.setAttribute('stroke-width', '3');
+                    text.setAttribute('paint-order', 'stroke');
+                    
+                    textG.appendChild(text);
+                    conflictsGroup.appendChild(textG);
+                }
+            });
+        }
+        
+        function renderDynamicConflicts(conflicts, draggedElement, newDay, newTime) {
+            // 1. Clear previous conflicts logic
+            conflictsGroup.innerHTML = '';
+            
+            // 2. Reset highlights
+            document.querySelectorAll('.schedule-block.conflict-hazard').forEach(el => {
+                el.classList.remove('conflict-hazard');
+            });
+            
+            // 3. Group by target block to combine labels
+            const groupedConflicts = {};
+            conflicts.forEach(conflict => {
+                // Key based on target block ID and Slot Index
+                const key = `${conflict.blockId}-${conflict.slotIndex}`;
+                if (!groupedConflicts[key]) {
+                     groupedConflicts[key] = {
+                         blockId: conflict.blockId,
+                         slotIndex: conflict.slotIndex,
+                         resources: new Set()
+                     };
+                }
+                groupedConflicts[key].resources.add(conflict.resourceName);
+            });
+
+            // 4. Calculate visual coords of dragged element
+            const width = scheduleContainer.clientWidth;
+            const dayWidth = width / data.days;
+            const totalSeconds = 24 * 60 * 60;
+            const TOTAL_HEIGHT = 24 * 60;
+            
+            const draggedRect = draggedElement.querySelector('rect');
+            const draggedW = parseFloat(draggedRect.getAttribute('width'));
+            const draggedH = parseFloat(draggedRect.getAttribute('height'));
+            
+            const cxA = (newDay * dayWidth) + (dayWidth / 2); // Center of day column
+            const cyA = (newTime / totalSeconds) * TOTAL_HEIGHT + (draggedH / 2);
+
+            // 5. Draw grouped conflicts
+            Object.values(groupedConflicts).forEach(group => {
+                const { blockId, slotIndex, resources } = group;
+                const resourceLabel = Array.from(resources).join(', ');
+
+                const elB = document.querySelector(`.schedule-block[data-block-id="${blockId}"][data-slot-index="${slotIndex}"]`);
+                if (elB) {
+                    elB.classList.add('conflict-hazard');
+                    
+                    const rectB = elB.querySelector('rect');
+                    const xB = parseFloat(rectB.getAttribute('x'));
+                    const yB = parseFloat(rectB.getAttribute('y'));
+                    const wB = parseFloat(rectB.getAttribute('width'));
+                    const hB = parseFloat(rectB.getAttribute('height'));
+                    
+                    const cxB = xB + wB / 2;
+                    const cyB = yB + hB / 2;
+                    
+                    // Draw Dynamic Line
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute('x1', cxA);
+                    line.setAttribute('y1', cyA);
+                    line.setAttribute('x2', cxB);
+                    line.setAttribute('y2', cyB);
+                    line.setAttribute('stroke', '#ef4444'); 
+                    line.setAttribute('stroke-width', '2');
+                    line.setAttribute('stroke-dasharray', '5,5');
+                    line.setAttribute('opacity', '0.6');
+                    conflictsGroup.appendChild(line);
+                    
+                    // Label
+                    const midX = (cxA + cxB) / 2;
+                    const midY = (cyA + cyB) / 2;
+                    
+                    const textG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    textG.setAttribute('transform', `translate(${midX}, ${midY})`);
+                    
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('font-size', '10');
+                    text.setAttribute('fill', '#dc2626');
+                    text.setAttribute('font-weight', 'bold');
+                    text.textContent = resourceLabel;
+                    text.setAttribute('stroke', 'white');
+                    text.setAttribute('stroke-width', '3');
+                    text.setAttribute('paint-order', 'stroke');
+                    
+                    textG.appendChild(text);
+                    conflictsGroup.appendChild(textG);
+                }
+            });
+        }
+
         function renderBlocks() {
             blocksGroup.innerHTML = '';
             
@@ -1225,6 +1511,9 @@
                     });
                 });
             }
+            
+            // Render conflicts after blocks are placed (so we can find their positions)
+            renderConflicts();
         }
 
         // --- Drag and Drop Logic ---
@@ -1246,6 +1535,8 @@
                 element.classList.add('dragging');
                 // Bring to front
                 blocksGroup.appendChild(element); 
+                // Clear static conflicts during drag to avoid lines pointing to empty space
+                conflictsGroup.innerHTML = '';
             }
         }
 
@@ -1261,6 +1552,34 @@
 
             // Visual update (ghosting/direct movement)
             dragState.element.setAttribute('transform', `translate(${dx}, ${dy})`);
+
+            // --- Phase 3 Logic: Dynamic Conflict Feedback ---
+            const width = scheduleContainer.clientWidth;
+            const dayWidth = width / data.days;
+            const totalSeconds = 24 * 60 * 60;
+            const TOTAL_HEIGHT = 24 * 60;
+            
+            // Calculate hypothetical position
+            const block = getBlock(dragState.blockId);
+            const slot = block.slots[dragState.slotIndex];
+            
+            // Day Change
+            const dayChange = Math.round(dx / dayWidth);
+            let newDay = slot.day + dayChange;
+            
+            // Time Change
+            const timeChangeSeconds = dy * 60; 
+            let snappedTimeChange = Math.round(timeChangeSeconds / 600) * 600;
+            let newTime = slot.time + snappedTimeChange;
+
+            // Clamping for preview
+            if (newDay < 0) newDay = 0;
+            if (newDay >= data.days) newDay = data.days - 1;
+            if (newTime < 0) newTime = 0;
+            if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
+
+            const conflicts = getPotentialConflicts(dragState.blockId, dragState.slotIndex, newDay, newTime);
+            renderDynamicConflicts(conflicts, dragState.element, newDay, newTime);
         });
 
         window.addEventListener('mouseup', (e) => {
@@ -1294,10 +1613,16 @@
                 dragState.element.setAttribute('transform', ''); 
             }
             
+            // Cleanup dynamic conflict visuals
+            conflictsGroup.innerHTML = '';
+            document.querySelectorAll('.schedule-block.conflict-hazard').forEach(el => {
+                el.classList.remove('conflict-hazard');
+            });
+            
             // Commit change
             moveBlockSlot(dragState.blockId, dragState.slotIndex, newDay, newTime);
             
-            // Re-render blocks
+            // Re-render blocks (and static conflicts)
             renderBlocks();
             
             dragState = null;
