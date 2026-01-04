@@ -319,7 +319,7 @@
         <button id="redoBtn" title="Redo">Redo</button>
       </div>
       <div id="schedulewindowtools"> 
-        <button id="sortBtn">Sort</button>
+        <button id="improveBtn">Improve</button>
         <button id="shuffleBtn">Shuffle</button>
       </div>
       <div id="windowselect">
@@ -738,6 +738,7 @@
                 if (s1.start < s2.end && s1.end > s2.start) {
                   // Avoid duplicates: push unique pair
                   conflicts.push({
+                    resourceId: resId, // Added resourceId here
                     resourceName: resource.name,
                     slotA: s1,
                     slotB: s2
@@ -789,10 +790,11 @@
                 
                 // Add to results (highlight all that share a resource, flag conflicts)
                 results.push({
-                   resourceName: resource.name,
-                   blockId: parseInt(otherBlockId),
-                   slotIndex: sIndex,
-                   isConflict: isConflict
+                    resourceId: resId, // Include ID here as well
+                    resourceName: resource.name,
+                    blockId: parseInt(otherBlockId),
+                    slotIndex: sIndex,
+                    isConflict: isConflict
                 });
               });
             }
@@ -800,6 +802,127 @@
         });
         return results;
       }
+      
+      // --- Optimization Helpers ---
+
+      function isValidSwap(slotA, blockA, slotB, blockB) {
+          if (slotA.locked || slotB.locked) return false;
+          if (blockA.duration !== blockB.duration) return false;
+          
+          // If same block, swap is always valid regarding "one per day" constraint
+          // because the set of days {A.day, B.day} -> {B.day, A.day} doesn't change.
+          if (blockA === blockB) return true;
+
+          // Check Block A on Slot B's day
+          // We are moving Slot A to B.day. 
+          // Is there ANY OTHER slot of Block A on B.day?
+          const blockA_on_DayB = blockA.slots.some(s => s !== slotA && s.day === slotB.day);
+          if (blockA_on_DayB) return false;
+
+          // Check Block B on Slot A's day
+          const blockB_on_DayA = blockB.slots.some(s => s !== slotB && s.day === slotA.day);
+          if (blockB_on_DayA) return false;
+
+          return true;
+      }
+
+      function shuffle() {
+          recordStateForUndo(); // One undo for the batch
+          
+          const allSlots = [];
+          Object.keys(data.blocks).forEach(bId => {
+              const block = data.blocks[bId];
+              block.slots.forEach(slot => {
+                  allSlots.push({ slot, block });
+              });
+          });
+
+          // Try N swaps
+          for(let i=0; i<allSlots.length * 2; i++) {
+              const idx1 = Math.floor(Math.random() * allSlots.length);
+              const idx2 = Math.floor(Math.random() * allSlots.length);
+              if (idx1 === idx2) continue;
+              
+              const itemA = allSlots[idx1];
+              const itemB = allSlots[idx2];
+              
+              if (isValidSwap(itemA.slot, itemA.block, itemB.slot, itemB.block)) {
+                    // Swap day and time
+                    const tempDay = itemA.slot.day;
+                    const tempTime = itemA.slot.time;
+                    itemA.slot.day = itemB.slot.day;
+                    itemA.slot.time = itemB.slot.time;
+                    itemB.slot.day = tempDay;
+                    itemB.slot.time = tempTime;
+              }
+          }
+          notifyAllListeners();
+      }
+
+      function improve() {
+          const initialConflicts = getConflicts().length;
+          if (initialConflicts === 0) {
+              alert("No conflicts to improve!");
+              return;
+          }
+
+          const allSlots = [];
+          Object.keys(data.blocks).forEach(bId => {
+              const block = data.blocks[bId];
+              block.slots.forEach(slot => {
+                  allSlots.push({ slot, block });
+              });
+          });
+
+          // Fisher-Yates shuffle indices to randomize search order for greedy descent
+          const indices = Array.from({length: allSlots.length}, (_, i) => i);
+          for (let i = indices.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [indices[i], indices[j]] = [indices[j], indices[i]];
+          }
+
+          for (let i = 0; i < indices.length; i++) {
+              for (let j = i + 1; j < indices.length; j++) {
+                  const itemA = allSlots[indices[i]];
+                  const itemB = allSlots[indices[j]];
+
+                  if (isValidSwap(itemA.slot, itemA.block, itemB.slot, itemB.block)) {
+                        // Store values
+                        const dayA = itemA.slot.day;
+                        const timeA = itemA.slot.time;
+                        const dayB = itemB.slot.day;
+                        const timeB = itemB.slot.time;
+
+                        // Try Swap
+                        itemA.slot.day = dayB; itemA.slot.time = timeB;
+                        itemB.slot.day = dayA; itemB.slot.time = timeA;
+
+                        const newConflicts = getConflicts().length;
+
+                        if (newConflicts < initialConflicts) {
+                            // Revert strictly to record undo
+                            itemA.slot.day = dayA; itemA.slot.time = timeA;
+                            itemB.slot.day = dayB; itemB.slot.time = timeB;
+
+                            recordStateForUndo();
+
+                            // Apply officially
+                            itemA.slot.day = dayB; itemA.slot.time = timeB;
+                            itemB.slot.day = dayA; itemB.slot.time = timeA;
+                            
+                            notifyAllListeners();
+                            return; // Single step improvement
+                        } else {
+                            // Revert
+                            itemA.slot.day = dayA; itemA.slot.time = timeA;
+                            itemB.slot.day = dayB; itemB.slot.time = timeB;
+                        }
+                  }
+              }
+          }
+          alert("No simple swap found to improve conflicts.");
+      }
+
 
       function undo(newBlockCallback, newResourceCallback) {
         performStateSwap(undoStack, redoStack, newBlockCallback, newResourceCallback);
@@ -811,18 +934,72 @@
 
       // -- Serialization Functions --
 
-      function loadData(newData, newBlockCallback, newResourceCallback) {
+      function loadData(loadedData, newBlockCallback, newResourceCallback) {
         // 1. Reset State
         undoStack = [];
         redoStack = [];
         // Destroy existing listeners as they refer to old object IDs or UI elements that should be rebuilt
         modificationListeners = { blockListeners: {}, resourceListeners: {} };
 
-        // 2. Load Data
-        data = newData;
+        // 2. Re-organize IDs (Renumber alphanumerically)
+        
+        // --- Process Blocks ---
+        const oldBlocks = loadedData.blocks || {};
+        // Sort keys based on block name
+        const sortedBlockKeys = Object.keys(oldBlocks).sort((a, b) => {
+             const nameA = oldBlocks[a].name || "";
+             const nameB = oldBlocks[b].name || "";
+             return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        const newBlocks = {};
+        const blockIdMap = {}; // Map old ID -> new ID
+        let nextBlockId = 1;
+
+        sortedBlockKeys.forEach(oldKey => {
+            const newId = nextBlockId++;
+            newBlocks[newId] = oldBlocks[oldKey];
+            blockIdMap[oldKey] = newId; 
+        });
+
+        // --- Process Resources ---
+        const oldResources = loadedData.resources || {};
+        // Sort keys based on resource name
+        const sortedResourceKeys = Object.keys(oldResources).sort((a, b) => {
+             const nameA = oldResources[a].name || "";
+             const nameB = oldResources[b].name || "";
+             return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        const newResources = {};
+        let nextResourceId = 1;
+
+        sortedResourceKeys.forEach(oldKey => {
+            const newId = nextResourceId++;
+            const resource = oldResources[oldKey];
+            
+            // Update links within this resource to point to new block IDs
+            if (resource.links && Array.isArray(resource.links)) {
+                resource.links.forEach(link => {
+                    // Check if we have a mapping for this block
+                    if (link.block !== undefined && blockIdMap[link.block] !== undefined) {
+                        link.block = blockIdMap[link.block];
+                    }
+                });
+            }
+            
+            newResources[newId] = resource;
+        });
+
+        // 3. Set Data
+        data = {
+            days: loadedData.days || 1,
+            blocks: newBlocks,
+            resources: newResources
+        };
         window.data = data;
 
-        // 3. Notify callbacks for every item so UI can repopulate
+        // 4. Notify callbacks for every item so UI can repopulate
         if (newBlockCallback) {
           Object.keys(data.blocks).forEach(id => newBlockCallback(parseInt(id)));
         }
@@ -830,7 +1007,7 @@
           Object.keys(data.resources).forEach(id => newResourceCallback(parseInt(id)));
         }
         
-        console.log("Data loaded. Listeners and stack cleared.");
+        console.log("Data loaded and organized (IDs renumbered). Listeners and stack cleared.");
       }
 
       function getBlock(id) { return data.blocks[id]; }
@@ -862,6 +1039,9 @@
         const settingDaysInput = document.getElementById('settingDaysInput');
 
         const linkerTable = document.getElementById('linkerTable');
+        
+        const shuffleBtn = document.getElementById('shuffleBtn');
+        const improveBtn = document.getElementById('improveBtn');
 
         // Scheduler View Elements
         const scheduleContainer = document.getElementById('scheduleContainer');
@@ -1222,17 +1402,15 @@
                     groupedConflicts[key] = {
                         slotA: conflict.slotA,
                         slotB: conflict.slotB,
-                        resources: new Set()
+                        resources: new Map() // Use Map to store ID and Name
                     };
                 }
-                groupedConflicts[key].resources.add(conflict.resourceName);
+                groupedConflicts[key].resources.set(conflict.resourceId, conflict.resourceName);
             });
 
             // Iterate over grouped conflicts and draw one line per pair
             Object.values(groupedConflicts).forEach(group => {
                 const { slotA, slotB, resources } = group;
-                // Combine resource names
-                const resourceLabel = Array.from(resources).join(', ');
 
                 const elA = document.querySelector(`.schedule-block[data-block-id="${slotA.blockId}"][data-slot-index="${slotA.slotIndex}"] rect`);
                 const elB = document.querySelector(`.schedule-block[data-block-id="${slotB.blockId}"][data-slot-index="${slotB.slotIndex}"] rect`);
@@ -1279,11 +1457,49 @@
                     text.setAttribute('font-size', '10');
                     text.setAttribute('fill', '#dc2626'); // Red-600
                     text.setAttribute('font-weight', 'bold');
-                    text.textContent = resourceLabel;
                     
+                    // Stroke for background readability
                     text.setAttribute('stroke', 'white');
                     text.setAttribute('stroke-width', '3');
                     text.setAttribute('paint-order', 'stroke');
+                    
+                    // Create interactive TSPANS for each resource
+                    let isFirst = true;
+                    resources.forEach((name, id) => {
+                        if (!isFirst) {
+                            const sep = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                            sep.textContent = ", ";
+                            text.appendChild(sep);
+                        }
+                        const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                        span.textContent = name;
+
+                        // Mouse Over: Highlight peers
+                        span.addEventListener('mouseover', () => {
+                             // Find all blocks linked to this resource ID
+                             const res = data.resources[id];
+                             if (res && res.links) {
+                                 res.links.forEach(l => {
+                                     if (l.type === 'MUST') {
+                                         // Highlight all instances of this block
+                                         document.querySelectorAll(`.schedule-block[data-block-id="${l.block}"]`).forEach(el => {
+                                             el.classList.add('related-peer');
+                                         });
+                                     }
+                                 });
+                             }
+                        });
+
+                        // Mouse Out: Clear highlights
+                        span.addEventListener('mouseout', () => {
+                            document.querySelectorAll('.schedule-block.related-peer').forEach(el => {
+                                el.classList.remove('related-peer');
+                            });
+                        });
+                        
+                        text.appendChild(span);
+                        isFirst = false;
+                    });
                     
                     textG.appendChild(text);
                     conflictsGroup.appendChild(textG);
@@ -1310,10 +1526,10 @@
                 const key = `${conflict.blockId}-${conflict.slotIndex}`;
                 if (!groupedConflicts[key]) {
                      groupedConflicts[key] = {
-                         blockId: conflict.blockId,
-                         slotIndex: conflict.slotIndex,
-                         isConflict: conflict.isConflict, // Geometric property, same for all
-                         resources: new Set()
+                          blockId: conflict.blockId,
+                          slotIndex: conflict.slotIndex,
+                          isConflict: conflict.isConflict, // Geometric property, same for all
+                          resources: new Set()
                      };
                 }
                 groupedConflicts[key].resources.add(conflict.resourceName);
@@ -1945,6 +2161,18 @@
              renderGrid(); // Refresh grid
              renderBlocks();
           }
+        });
+        
+        // --- Optimization Tools ---
+        
+        shuffleBtn.addEventListener('click', () => {
+            shuffle();
+            if (views.scheduler.style.display !== 'none') renderBlocks();
+        });
+        
+        improveBtn.addEventListener('click', () => {
+            improve();
+            if (views.scheduler.style.display !== 'none') renderBlocks();
         });
       });
     </script>
