@@ -109,6 +109,11 @@
         flex-direction: column;
       }
 
+      #scheduleContainer {
+        user-select: none;
+        -webkit-user-select: none; /* Safari */
+      }
+
       /* --- Table Styles --- */
       .editor-table {
         width: 100%;
@@ -320,7 +325,9 @@
       </div>
       <div id="schedulewindowtools"> 
         <button id="improveBtn">Improve</button>
+        <button id="resectionBtn" title="Move students to peer sections to resolve conflicts">Resection</button>
         <button id="shuffleBtn">Shuffle</button>
+        <button id="searchBtn">Search</button>
       </div>
       <div id="windowselect">
         <button id="viewSchedulerBtn">Scheduler</button>
@@ -361,6 +368,7 @@
            <tr>
              <th style="width: 60px;">ID</th>
              <th>Name</th>
+             <th style="width: 120px;">Group (Section)</th>
              <th style="width: 120px;">Duration (min)</th>
              <th style="width: 100px;">Occurrences</th>
              <th style="width: 100px;">Actions</th>
@@ -540,6 +548,7 @@
         const id = getNextBlockId();
         data.blocks[id] = {
           name: `Block ${id}`,
+          sectionGroup: "", // New property for resection tool
           duration: 3600,
           slots: [{ day: 0, time: 0, locked: false }]
         };
@@ -566,6 +575,15 @@
         if (block.name === name) return;
         recordStateForUndo();
         block.name = name;
+        notifyBlockListeners(id);
+      }
+
+      function setBlockGroup(id, group) {
+        const block = data.blocks[id];
+        if (!block) return;
+        if (block.sectionGroup === group) return;
+        recordStateForUndo();
+        block.sectionGroup = group;
         notifyBlockListeners(id);
       }
 
@@ -738,7 +756,7 @@
                 if (s1.start < s2.end && s1.end > s2.start) {
                   // Avoid duplicates: push unique pair
                   conflicts.push({
-                    resourceId: resId, // Added resourceId here
+                    resourceId: parseInt(resId),
                     resourceName: resource.name,
                     slotA: s1,
                     slotB: s2
@@ -749,6 +767,34 @@
           }
         });
         return conflicts;
+      }
+      
+      // Fast check for a specific resource, used during resection simulation
+      function countConflictsForResource(resId) {
+          const resource = data.resources[resId];
+          if (!resource) return 0;
+          const linkedBlockIds = resource.links.filter(l => l.type === 'MUST').map(l => l.block);
+          const slots = [];
+          linkedBlockIds.forEach(bId => {
+              const blk = data.blocks[bId];
+              if(blk) {
+                  blk.slots.forEach(s => {
+                       slots.push({ day: s.day, start: s.time, end: s.time + blk.duration });
+                  });
+              }
+          });
+          
+          let count = 0;
+          for(let i=0; i<slots.length; i++) {
+              for(let j=i+1; j<slots.length; j++) {
+                  if (slots[i].day === slots[j].day) {
+                       if (slots[i].start < slots[j].end && slots[i].end > slots[j].start) {
+                           count++;
+                       }
+                  }
+              }
+          }
+          return count;
       }
 
       function getPotentialConflicts(blockId, slotIndex, day, time) {
@@ -838,7 +884,7 @@
           });
 
           // Try N swaps
-          for(let i=0; i<allSlots.length * 2; i++) {
+          for(let i=0; i<20; i++) {
               const idx1 = Math.floor(Math.random() * allSlots.length);
               const idx2 = Math.floor(Math.random() * allSlots.length);
               if (idx1 === idx2) continue;
@@ -923,6 +969,270 @@
           alert("No simple swap found to improve conflicts.");
       }
 
+      function resection() {
+          const MAX_ITERATIONS = 50;
+          let improved = true;
+          let iterations = 0;
+          let hasRecordedUndo = false;
+          
+          const initialTotal = getConflicts().length;
+          if (initialTotal === 0) {
+              alert("No conflicts to resection.");
+              return;
+          }
+
+          while (improved && iterations < MAX_ITERATIONS) {
+              improved = false;
+              iterations++;
+              
+              const conflicts = getConflicts();
+              if (conflicts.length === 0) break;
+
+              for (const conflict of conflicts) {
+                  // Try to resolve this conflict by moving Resource from Slot A -> Peer of Block A
+                  // or Slot B -> Peer of Block B
+                  
+                  const candidates = [
+                      { targetSlot: conflict.slotA, blockId: conflict.slotA.blockId },
+                      { targetSlot: conflict.slotB, blockId: conflict.slotB.blockId }
+                  ];
+
+                  for (const cand of candidates) {
+                      const currentBlock = data.blocks[cand.blockId];
+                      if (!currentBlock.sectionGroup || currentBlock.sectionGroup.trim() === "") continue;
+
+                      // Find peers (blocks with same sectionGroup, excluding self)
+                      const peers = Object.keys(data.blocks)
+                          .map(id => ({ id: parseInt(id), ...data.blocks[id] }))
+                          .filter(b => b.sectionGroup === currentBlock.sectionGroup && b.id !== cand.blockId);
+
+                      for (const peer of peers) {
+                          const resId = conflict.resourceId;
+                          const res = data.resources[resId];
+
+                          // CONSTRAINT: "Resources like teachers must be present for all sections"
+                          // If the resource is ALREADY linked to the peer, we cannot "move" it there, 
+                          // as unlinking from current would violate the "all sections" rule for teachers.
+                          // Students are typically only in one section, so they won't be linked to the peer yet.
+                          const isAlreadyInPeer = res.links.some(l => l.block === peer.id && l.type === 'MUST');
+                          
+                          if (isAlreadyInPeer) continue; // It's likely a teacher, skip.
+
+                          // Calculate conflicts before move
+                          const conflictsBefore = countConflictsForResource(resId);
+
+                          // Simulate Move: Unlink current, Link peer
+                          // 1. Remove link to current
+                          const originalLinks = [...res.links];
+                          res.links = res.links.filter(l => !(l.block === cand.blockId && l.type === 'MUST'));
+                          // 2. Add link to peer
+                          res.links.push({ type: 'MUST', block: peer.id });
+
+                          // Calculate conflicts after move
+                          const conflictsAfter = countConflictsForResource(resId);
+
+                          if (conflictsAfter < conflictsBefore) {
+                              // Improvement found!
+                              // Revert simulation first to ensure clean state recording if not done yet
+                              res.links = originalLinks;
+
+                              if (!hasRecordedUndo) {
+                                  recordStateForUndo();
+                                  hasRecordedUndo = true;
+                              }
+
+                              // Apply Move for real
+                              // We modify data directly because we are inside a batch operation
+                              const rReal = data.resources[resId];
+                              rReal.links = rReal.links.filter(l => !(l.block === cand.blockId && l.type === 'MUST'));
+                              rReal.links.push({ type: 'MUST', block: peer.id });
+
+                              improved = true;
+                              break; // Break peer loop
+                          } else {
+                              // Revert simulation
+                              res.links = originalLinks;
+                          }
+                      }
+                      if (improved) break; // Break candidate loop
+                  }
+                  if (improved) break; // Break conflict loop (restart search with new state)
+              }
+          }
+          
+          if (hasRecordedUndo) {
+              notifyAllListeners();
+              const finalTotal = getConflicts().length;
+              alert(`Resection Complete.\nConflicts reduced from ${initialTotal} to ${finalTotal}.`);
+          } else {
+              alert("Could not find any student moves to reduce conflicts.");
+          }
+      }
+
+      // --- Backtracking Search ---
+      function search() {
+        const startTime = Date.now();
+        recordStateForUndo(); // Capture state so we can revert if fail
+
+        // 1. Compute Domain (Set of valid [day, time] tuples based on existing occurrences)
+        const validStarts = new Set();
+        Object.values(data.blocks).forEach(b => {
+           b.slots.forEach(s => { if (!s.locked) validStarts.add(`${s.day},${s.time}`) });
+        });
+        
+        // Convert Set to Array of objects
+        // Sort deterministicly: Day first, then Time
+        const domain = Array.from(validStarts).map(str => {
+           const [d, t] = str.split(',').map(Number);
+           return { day: d, time: t };
+        }).sort((a,b) => (a.day - b.day) || (a.time - b.time)); 
+
+        if (domain.length === 0) {
+            alert("No existing time slots found to define the placement domain.");
+            return;
+        } else {
+            console.log(`Branching factor is ${domain.length}`);
+        }
+
+        // 2. Identify Variables (Unlocked Slots) and Constraints (Locked Slots)
+        const fixedSlots = [];
+        const variables = []; 
+
+        Object.entries(data.blocks).forEach(([bIdStr, block]) => {
+            const bId = parseInt(bIdStr);
+            block.slots.forEach((slot, sIdx) => {
+                const item = {
+                    blockId: bId,
+                    slotIndex: sIdx,
+                    day: slot.day,
+                    time: slot.time,
+                    duration: block.duration,
+                    original: slot
+                };
+                if (slot.locked) {
+                    fixedSlots.push(item);
+                } else {
+                    variables.push(item);
+                    // "Clear" the slot visually (set to -1) while solving
+                    slot.day = -1;
+                    slot.time = -1;
+                }
+            });
+        });
+
+        console.log(`Search depth is ${variables.length}`);
+
+        // 3. Precompute Resource Conflicts (Conflict Graph)
+        const conflictGraph = {}; 
+        Object.keys(data.blocks).forEach(id => conflictGraph[id] = new Set());
+        
+        Object.values(data.resources).forEach(res => {
+            const linkedBlocks = res.links.filter(l => l.type === 'MUST').map(l => l.block);
+            for(let i=0; i<linkedBlocks.length; i++) {
+                for(let j=i+1; j<linkedBlocks.length; j++) {
+                    const b1 = linkedBlocks[i];
+                    const b2 = linkedBlocks[j];
+                    conflictGraph[b1].add(b2);
+                    conflictGraph[b2].add(b1);
+                }
+            }
+        });
+
+        // 4. Recursive Backtracker
+        let iterations = 0;
+        
+        function solveRecursive(index) {
+            // Check Timeout (30 seconds)
+            if (Date.now() - startTime > 30 * 1000) return "TIMEOUT";
+
+            // Success Base Case
+            if (index >= variables.length) return true;
+
+            const current = variables[index];
+            iterations++;
+            
+            // Iterate through domain using index loop to track progress
+            for (let i = 0; i < domain.length; i++) {
+
+                if (index < 2) console.log(`Searching ${i} / ${domain.length} at depth ${index}`);
+                const pos = domain[i];
+
+                // --- Constraint A: Geometric Overlap with Fixed Slots ---
+                const currentEnd = pos.time + current.duration;
+                
+                // Only check fixed slots on the same day
+                const fixedConflict = fixedSlots.some(f => {
+                    if (f.day !== pos.day) return false;
+                    
+                    // Geometric check: StartA < EndB && EndA > StartB
+                    if (pos.time < (f.time + f.duration) && currentEnd > f.time) {
+                        if (f.blockId === current.blockId) return true;
+                        if (conflictGraph[current.blockId].has(f.blockId)) return true;
+                    }
+                    return false;
+                });
+                if (fixedConflict) continue;
+
+                // --- Constraint B: Geometric Overlap with Already Placed Variables ---
+                const variableConflict = variables.slice(0, index).some(v => {
+                    if (v.day !== pos.day) return false;
+
+                    // Geometric check
+                    if (pos.time < (v.time + v.duration) && currentEnd > v.time) {
+                        if (v.blockId === current.blockId) return true; 
+                        if (conflictGraph[current.blockId].has(v.blockId)) return true;
+                    }
+                    return false;
+                });
+                if (variableConflict) continue;
+
+                // --- Constraint C: One Occurrence Per Block Per Day ---
+                const alreadyOnDay = variables.slice(0, index).some(v => v.blockId === current.blockId && v.day === pos.day);
+                if (alreadyOnDay) continue;
+
+                const fixedOnDay = fixedSlots.some(f => f.blockId === current.blockId && f.day === pos.day);
+                if (fixedOnDay) continue;
+
+                // --- Placement is Valid ---
+                current.day = pos.day;
+                current.time = pos.time;
+
+                // Recurse
+                const result = solveRecursive(index + 1);
+                if (result === true) return true;
+                if (result === "TIMEOUT") return "TIMEOUT";
+
+                // Backtrack
+                current.day = -1;
+                current.time = -1;
+            }
+
+            return false; // No valid placement found in domain for this variable
+        }
+
+        // Run Solver
+        console.log("Starting solver...");
+        const result = solveRecursive(0);
+
+        if (result === true) {
+            // Apply variables back to original data objects
+            variables.forEach(v => {
+                v.original.day = v.day;
+                v.original.time = v.time;
+            });
+            notifyAllListeners();
+            console.log(`Solver finished in ${(Date.now() - startTime)/1000}s`);
+            alert("Schedule Solved!");
+        } else if (result === "TIMEOUT") {
+            undo(null, null); // Revert the "clearing" of unlocked blocks
+            console.log("Solver timed out.");
+            alert("Solver timed out (30s limit reached). Reverting.");
+        } else {
+            undo(null, null); // Revert
+            console.log("No solution found.");
+            alert("No solution found that satisfies all constraints.");
+        }
+      }
 
       function undo(newBlockCallback, newResourceCallback) {
         performStateSwap(undoStack, redoStack, newBlockCallback, newResourceCallback);
@@ -958,6 +1268,7 @@
 
         sortedBlockKeys.forEach(oldKey => {
             const newId = nextBlockId++;
+            // Note: simple assignment preserves custom properties like sectionGroup
             newBlocks[newId] = oldBlocks[oldKey];
             blockIdMap[oldKey] = newId; 
         });
@@ -1042,8 +1353,17 @@
         
         const shuffleBtn = document.getElementById('shuffleBtn');
         const improveBtn = document.getElementById('improveBtn');
+        const searchBtn = document.getElementById('searchBtn');
+        const resectionBtn = document.getElementById('resectionBtn');
 
         // Scheduler View Elements
+        // Define explicitly to avoid conflict with window.scheduler API object
+        const schedulerDiv = document.getElementById('scheduler');
+        const linkerDiv = document.getElementById('linker');
+        const blockEditorDiv = document.getElementById('blockeditor');
+        const resourceEditorDiv = document.getElementById('resourceeditor');
+        const settingsEditorDiv = document.getElementById('settingseditor');
+
         const scheduleContainer = document.getElementById('scheduleContainer');
         const scheduleSvg = document.getElementById('scheduleSvg');
         const gridGroup = document.getElementById('gridGroup');
@@ -1087,15 +1407,13 @@
           actionsTd.appendChild(deleteBtn);
           tr.appendChild(actionsTd);
 
-          // Setup Listener for Updates (Undo/Redo or manual changes)
+          // Setup Listener for updates
           const unlisten = listenToResource(id, () => {
             const currentRes = getResource(id);
             if (!currentRes) {
-              // Resource was deleted
               tr.remove();
-              unlisten(); // cleanup listener
+              unlisten(); 
             } else {
-              // Resource was updated (e.g. rename via undo)
               if (nameInput.value !== currentRes.name) {
                 nameInput.value = currentRes.name;
               }
@@ -1130,6 +1448,19 @@
           });
           nameTd.appendChild(nameInput);
           tr.appendChild(nameTd);
+          
+          // Section Group Cell (New)
+          const groupTd = document.createElement('td');
+          const groupInput = document.createElement('input');
+          groupInput.type = 'text';
+          groupInput.value = block.sectionGroup || "";
+          groupInput.placeholder = "e.g., Sci1";
+          groupInput.className = 'editor-input';
+          groupInput.addEventListener('change', (e) => {
+            setBlockGroup(id, e.target.value);
+          });
+          groupTd.appendChild(groupInput);
+          tr.appendChild(groupTd);
 
           // Duration Cell
           const durTd = document.createElement('td');
@@ -1181,6 +1512,10 @@
             } else {
                if (nameInput.value !== currentBlock.name) {
                  nameInput.value = currentBlock.name;
+               }
+               // Update group
+               if (groupInput.value !== (currentBlock.sectionGroup || "")) {
+                   groupInput.value = currentBlock.sectionGroup || "";
                }
                const mins = Math.floor(currentBlock.duration / 60);
                if (parseInt(durInput.value) !== mins) {
@@ -1369,15 +1704,15 @@
                 if (h < 24) {
                     // Minor Ticks (10 mins)
                     for (let m = 10; m < 60; m += 10) {
-                         const ym = y + (m / 60) * PIXELS_PER_HOUR;
-                         const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                         minLine.setAttribute('x1', 0);
-                         minLine.setAttribute('y1', ym);
-                         minLine.setAttribute('x2', width);
-                         minLine.setAttribute('y2', ym);
-                         minLine.setAttribute('stroke', '#f3f4f6'); // very light gray
-                         minLine.setAttribute('stroke-width', '1');
-                         gridGroup.appendChild(minLine);
+                          const ym = y + (m / 60) * PIXELS_PER_HOUR;
+                          const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                          minLine.setAttribute('x1', 0);
+                          minLine.setAttribute('y1', ym);
+                          minLine.setAttribute('x2', width);
+                          minLine.setAttribute('y2', ym);
+                          minLine.setAttribute('stroke', '#f3f4f6'); // very light gray
+                          minLine.setAttribute('stroke-width', '1');
+                          gridGroup.appendChild(minLine);
                     }
                 }
             }
@@ -1627,7 +1962,7 @@
                             ...slot,
                             duration: block.duration,
                             name: block.name,
-                            blockId: parseInt(id), // Changed line
+                            blockId: parseInt(id),
                             originalIndex: index // Capture index for drag logic
                         });
                     }
@@ -1761,6 +2096,7 @@
         let dragState = null;
 
         function handleDragStart(e, blockId, slotIndex, startDay, startTime, isLocked, element) {
+            e.preventDefault(); // Prevent text selection/native drag
             // Calculate click offset relative to the block's top-left corner
             const container = document.getElementById('scheduleContainer');
             const containerRect = container.getBoundingClientRect();
@@ -1986,7 +2322,7 @@
            if (row) resourceTableBody.appendChild(row);
            
            // If we are in Linker view (rare due to button location, but for consistency), refresh it
-           if (linker.style.display !== 'none') renderLinker();
+           if (linkerDiv.style.display !== 'none') renderLinker();
         });
 
         addBlockBtn.addEventListener('click', () => {
@@ -1994,7 +2330,7 @@
            const row = createBlockRow(id);
            if (row) blockTableBody.appendChild(row);
            
-           if (linker.style.display !== 'none') renderLinker();
+           if (linkerDiv.style.display !== 'none') renderLinker();
         });
 
         // Callbacks for Undo/Redo/Load
@@ -2005,8 +2341,8 @@
              const row = createBlockRow(id);
              if (row) blockTableBody.appendChild(row);
            }
-           if (linker.style?.display !== 'none') renderLinker();
-           if (scheduler.style?.display !== 'none') renderBlocks();
+           if (linkerDiv.style?.display !== 'none') renderLinker();
+           if (schedulerDiv.style?.display !== 'none') renderBlocks();
         };
         
         const onNewResource = (id) => {
@@ -2017,17 +2353,17 @@
              const row = createResourceRow(id);
              if (row) resourceTableBody.appendChild(row);
            }
-           if (linker.style.display !== 'none') renderLinker();
+           if (linkerDiv.style.display !== 'none') renderLinker();
         };
 
         // --- View Switching Logic ---
         
         const views = {
-          scheduler: document.getElementById('scheduler'),
-          blocks: document.getElementById('blockeditor'),
-          resources: document.getElementById('resourceeditor'),
-          linker: document.getElementById('linker'),
-          settings: document.getElementById('settingseditor')
+          scheduler: schedulerDiv,
+          blocks: blockEditorDiv,
+          resources: resourceEditorDiv,
+          linker: linkerDiv,
+          settings: settingsEditorDiv
         };
 
         const viewBtns = {
@@ -2128,8 +2464,8 @@
               blockTableBody.innerHTML = '';
               loadData(loadedData, onNewBlock, onNewResource);
               updateSettingsView(); // Refresh settings UI
-              if (linker.style?.display !== 'none') renderLinker();
-              if (scheduler.style?.display !== 'none') {
+              if (linkerDiv.style?.display !== 'none') renderLinker();
+              if (schedulerDiv.style?.display !== 'none') {
                 renderGrid(); // Refresh grid
                 renderBlocks();
               }
@@ -2146,8 +2482,8 @@
         undoBtn.addEventListener('click', () => {
           undo(onNewBlock, onNewResource);
           updateSettingsView(); // Refresh settings UI on undo
-          if (linker.style.display !== 'none') renderLinker();
-          if (scheduler.style.display !== 'none') {
+          if (linkerDiv.style.display !== 'none') renderLinker();
+          if (schedulerDiv.style.display !== 'none') {
             renderGrid(); // Refresh grid
             renderBlocks();
           }
@@ -2156,8 +2492,8 @@
         redoBtn.addEventListener('click', () => {
           redo(onNewBlock, onNewResource);
           updateSettingsView(); // Refresh settings UI on redo
-          if (linker.style.display !== 'none') renderLinker();
-          if (scheduler.style.display !== 'none') {
+          if (linkerDiv.style.display !== 'none') renderLinker();
+          if (schedulerDiv.style.display !== 'none') {
              renderGrid(); // Refresh grid
              renderBlocks();
           }
@@ -2172,6 +2508,16 @@
         
         improveBtn.addEventListener('click', () => {
             improve();
+            if (views.scheduler.style.display !== 'none') renderBlocks();
+        });
+
+        resectionBtn.addEventListener('click', () => {
+            resection();
+            if (views.scheduler.style.display !== 'none') renderBlocks();
+        });
+        
+        searchBtn.addEventListener('click', () => {
+            search();
             if (views.scheduler.style.display !== 'none') renderBlocks();
         });
       });
