@@ -24,7 +24,7 @@
       }
 
       /* Tools groups (Left and Right) */
-      #basictools, #schedulewindowtools {
+      #basictools, #schedulewindowtools, #availabilitytools {
         display: flex;
         gap: 8px;
         align-items: center; /* Ensure vertical alignment */
@@ -102,7 +102,7 @@
       }
 
       /* Scheduler View Style override for full width/height */
-      #scheduler {
+      #scheduler, #availability {
         flex-grow: 1;
         overflow: hidden; /* SVG container handles scroll */
         background-color: #ffffff;
@@ -110,7 +110,7 @@
         flex-direction: column;
       }
 
-      #scheduleContainer {
+      #scheduleContainer, #availabilityContainer {
         user-select: none;
         -webkit-user-select: none; /* Safari */
       }
@@ -332,6 +332,18 @@
         fill: #ddd6fe !important; /* Violet-200 */
         filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.5));
       }
+
+      /* Availability Block Styles */
+      .availability-block rect {
+        fill: #dcfce7; /* Green-100 */
+        stroke: #22c55e; /* Green-500 */
+        stroke-width: 1px;
+      }
+      .availability-block text {
+        fill: #166534; /* Green-800 */
+        font-size: 11px;
+        font-weight: 500;
+      }
     </style>
   </head>
   <body>
@@ -356,8 +368,17 @@
         <button id="shuffleBtn">Shuffle</button>
         <button id="searchBtn">Search</button>
       </div>
+      <div id="availabilitytools" style="display:none;">
+        <span style="display:flex; align-items:center; font-size:14px; color:#374151; margin-right: 8px;">
+            Filter Type:
+            <select id="availabilityFilter" style="margin-left:4px; padding:4px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:14px; color:#374151; cursor:pointer; background-color:white;">
+                <option value="">All Types</option>
+            </select>
+        </span>
+      </div>
       <div id="windowselect">
         <button id="viewSchedulerBtn">Scheduler</button>
+        <button id="viewAvailabilityBtn">Availability</button>
         <button id="viewBlocksBtn">Blocks</button>
         <button id="viewResourcesBtn">Resources</button>
         <button id="viewLinkerBtn">Linker</button>
@@ -414,6 +435,7 @@
            <tr>
              <th style="width: 80px;">ID</th>
              <th>Name</th>
+             <th>Type</th>
              <th style="width: 100px;">Actions</th>
            </tr>
          </thead>
@@ -424,7 +446,7 @@
     </div>
     
     <div id="scheduler">
-      <!-- Main Scheduler View - Step 3: Overlap Handling -->
+      <!-- Main Scheduler View -->
       <div id="scheduleContainer" style="flex-grow: 1; overflow: auto; position: relative; width: 100%; height: 100%;">
         <svg id="scheduleSvg" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -437,6 +459,16 @@
             <g id="conflictsGroup"></g>
         </svg>
       </div>
+    </div>
+
+    <!-- Availability View -->
+    <div id="availability" style="display:none;">
+        <div id="availabilityContainer" style="flex-grow: 1; overflow: auto; position: relative; width: 100%; height: 100%;">
+            <svg id="availabilitySvg" xmlns="http://www.w3.org/2000/svg">
+                <g id="avGridGroup"></g>
+                <g id="avBlocksGroup"></g>
+            </svg>
+        </div>
     </div>
     
     <div id="linker" style="display:none;">
@@ -487,7 +519,6 @@
       function recordStateForUndo() {
         undoStack.push(JSON.parse(JSON.stringify(data)));
         redoStack = [];
-        console.log("State recorded. Undo stack size:", undoStack.length);
       }
 
       function deepClone(obj) {
@@ -513,7 +544,6 @@
 
       function performStateSwap(popStack, pushStack, newBlockCallback, newResourceCallback) {
         if (popStack.length === 0) {
-            console.log("Stack empty, nothing to do.");
             return;
         }
 
@@ -634,36 +664,6 @@
         notifyBlockListeners(id);
       }
 
-      function moveBlockSlot(blockId, slotIndex, newDay, newTime) {
-        const block = data.blocks[blockId];
-        if (!block) return;
-        const slot = block.slots[slotIndex];
-        if (!slot) return;
-        
-        // Clamping logic
-        if (newDay < 0) newDay = 0;
-        if (newDay >= data.days) newDay = data.days - 1;
-        if (newTime < 0) newTime = 0;
-        // Ensure block fits within the day (24 hours)
-        if (newTime + block.duration > 86400) newTime = 86400 - block.duration;
-
-        // No change check (Click/Drop in place) -> Toggle Lock
-        if (slot.day === newDay && slot.time === newTime) {
-             recordStateForUndo();
-             slot.locked = !slot.locked;
-             notifyAllListeners();
-             return;
-        }
-
-        // If block is locked, prevent moving
-        if (slot.locked) return;
-
-        recordStateForUndo();
-        slot.day = newDay;
-        slot.time = newTime;
-        notifyAllListeners();
-      }
-
       // New function for bulk operations in a single undo step
       function applyBulkMoves(moves) {
          if (!moves || moves.length === 0) return;
@@ -673,7 +673,9 @@
             const block = data.blocks[move.blockId];
             if (block && block.slots[move.slotIndex]) {
                const slot = block.slots[move.slotIndex];
-               if (!slot.locked) {
+               if (slot.day == move.day && slot.time == move.time) {
+                  slot.locked = !slot.locked;
+               } else if (!slot.locked) {
                   slot.day = move.day;
                   slot.time = move.time;
                }
@@ -700,7 +702,7 @@
       function addResource() {
         recordStateForUndo();
         const id = getNextResourceId();
-        data.resources[id] = { name: `R${id}`, links: [] };
+        data.resources[id] = { name: `R${id}`, type: "", links: [] };
         return id;
       }
 
@@ -710,6 +712,15 @@
         if (resource.name === name) return;
         recordStateForUndo();
         resource.name = name;
+        notifyResourceListeners(id);
+      }
+
+      function setResourceType(id, type) {
+        const resource = data.resources[id];
+        if (!resource) return;
+        if (resource.type === type) return;
+        recordStateForUndo();
+        resource.type = type;
         notifyResourceListeners(id);
       }
 
@@ -1426,18 +1437,11 @@
         if (newResourceCallback) {
           Object.keys(data.resources).forEach(id => newResourceCallback(parseInt(id)));
         }
-        
-        console.log("Data loaded and organized (IDs renumbered). Listeners and stack cleared.");
       }
 
       function getBlock(id) { return data.blocks[id]; }
       function getResource(id) { return data.resources[id]; }
       
-      // Expose functions to window for console testing if needed
-      window.scheduler = {
-        addBlock, addResource, undo, redo, data, loadData, setBlockDuration, moveBlockSlot, getConflicts, getPotentialConflicts
-      };
-
       // ==========================================
       // UI INITIALIZATION
       // ==========================================
@@ -1466,10 +1470,12 @@
         const resectionBtn = document.getElementById('resectionBtn');
         
         const highlightSelect = document.getElementById('highlightSelect');
+        const availabilityFilterSelect = document.getElementById('availabilityFilter');
 
         // Scheduler View Elements
         // Define explicitly to avoid conflict with window.scheduler API object
         const schedulerDiv = document.getElementById('scheduler');
+        const availabilityDiv = document.getElementById('availability');
         const linkerDiv = document.getElementById('linker');
         const blockEditorDiv = document.getElementById('blockeditor');
         const resourceEditorDiv = document.getElementById('resourceeditor');
@@ -1480,6 +1486,12 @@
         const gridGroup = document.getElementById('gridGroup');
         const blocksGroup = document.getElementById('blocksGroup');
         const conflictsGroup = document.getElementById('conflictsGroup');
+
+        // Availability SVG Elements
+        const availabilityContainer = document.getElementById('availabilityContainer');
+        const availabilitySvg = document.getElementById('availabilitySvg');
+        const avGridGroup = document.getElementById('avGridGroup');
+        const avBlocksGroup = document.getElementById('avBlocksGroup');
 
         // --- Logic to Render Resource Table ---
 
@@ -1507,6 +1519,19 @@
           });
           nameTd.appendChild(nameInput);
           tr.appendChild(nameTd);
+          
+          // Type Cell
+          const typeTd = document.createElement('td');
+          const typeInput = document.createElement('input');
+          typeInput.type = 'text';
+          typeInput.value = resource.type || "";
+          typeInput.placeholder = "e.g., Teacher";
+          typeInput.className = 'editor-input';
+          typeInput.addEventListener('change', (e) => {
+            setResourceType(id, e.target.value);
+          });
+          typeTd.appendChild(typeInput);
+          tr.appendChild(typeTd);
 
           // Actions Cell
           const actionsTd = document.createElement('td');
@@ -1529,6 +1554,9 @@
             } else {
               if (nameInput.value !== currentRes.name) {
                 nameInput.value = currentRes.name;
+              }
+              if (typeInput.value !== (currentRes.type || "")) {
+                typeInput.value = currentRes.type || "";
               }
             }
           });
@@ -1781,40 +1809,38 @@
         });
 
 
-        // --- Scheduler Grid Logic ---
-        
+        // --- Shared Grid Logic ---
         const PIXELS_PER_HOUR = 60; // 1 min = 1 px
         const TOTAL_HEIGHT = 24 * PIXELS_PER_HOUR; // 1440px
 
-        function renderGrid() {
-            gridGroup.innerHTML = '';
+        function drawGrid(containerWidth, targetSvg, targetGroup) {
+            targetGroup.innerHTML = '';
             
-            const width = scheduleContainer.clientWidth;
-            if (width === 0) return; // Not visible yet
+            if (containerWidth === 0) return;
 
-            scheduleSvg.setAttribute('width', width);
-            scheduleSvg.setAttribute('height', TOTAL_HEIGHT);
+            targetSvg.setAttribute('width', containerWidth);
+            targetSvg.setAttribute('height', TOTAL_HEIGHT);
             
             const numDays = data.days;
-            const dayWidth = width / numDays;
+            const dayWidth = containerWidth / numDays;
 
-            // Draw Day Headers (Background Text)
+            // Draw Day Headers
             for (let i = 0; i < numDays; i++) {
                 const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                 const centerX = (i * dayWidth) + (dayWidth / 2);
                 text.setAttribute('x', centerX);
-                text.setAttribute('y', 50); // Near top
+                text.setAttribute('y', 50);
                 text.setAttribute('text-anchor', 'middle');
                 text.setAttribute('dominant-baseline', 'middle');
                 text.setAttribute('font-size', '32');
                 text.setAttribute('font-weight', 'bold');
-                text.setAttribute('fill', '#f3f4f6'); // Very light gray (matches bg hover, subtle)
-                text.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
+                text.setAttribute('fill', '#f3f4f6');
+                text.style.pointerEvents = 'none';
                 text.textContent = `Day ${i + 1}`;
-                gridGroup.appendChild(text);
+                targetGroup.appendChild(text);
             }
             
-            // Draw Day Columns (Vertical Lines)
+            // Draw Day Columns
             for (let i = 1; i < numDays; i++) {
                 const x = i * dayWidth;
                 const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -1822,57 +1848,57 @@
                 line.setAttribute('y1', 0);
                 line.setAttribute('x2', x);
                 line.setAttribute('y2', TOTAL_HEIGHT);
-                line.setAttribute('stroke', '#e5e7eb'); // light gray
+                line.setAttribute('stroke', '#e5e7eb');
                 line.setAttribute('stroke-width', '1');
-                gridGroup.appendChild(line);
+                targetGroup.appendChild(line);
             }
 
-            // Draw Time Rows (Horizontal Lines)
+            // Draw Time Rows
             for (let h = 0; h <= 24; h++) {
                 const y = h * PIXELS_PER_HOUR;
                 
-                // Major Tick (Hour)
                 const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 line.setAttribute('x1', 0);
                 line.setAttribute('y1', y);
-                line.setAttribute('x2', width);
+                line.setAttribute('x2', containerWidth);
                 line.setAttribute('y2', y);
-                line.setAttribute('stroke', '#d1d5db'); // gray
+                line.setAttribute('stroke', '#d1d5db');
                 line.setAttribute('stroke-width', '1');
-                gridGroup.appendChild(line);
+                targetGroup.appendChild(line);
 
-                // Time Label
                 const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                 text.setAttribute('x', 5);
-                text.setAttribute('y', y); // Align exactly on y
-                text.setAttribute('dominant-baseline', 'middle'); // Vertically centered
+                text.setAttribute('y', y);
+                text.setAttribute('dominant-baseline', 'middle');
                 text.setAttribute('font-size', '11');
                 text.setAttribute('font-weight', '500');
                 text.setAttribute('fill', '#6b7280');
-                
-                // Outline strokes for readability
                 text.setAttribute('stroke', 'white');
                 text.setAttribute('stroke-width', '3');
                 text.setAttribute('paint-order', 'stroke');
-                
                 text.textContent = `${h}:00`;
-                gridGroup.appendChild(text);
+                targetGroup.appendChild(text);
 
                 if (h < 24) {
-                    // Minor Ticks (10 mins)
                     for (let m = 10; m < 60; m += 10) {
                           const ym = y + (m / 60) * PIXELS_PER_HOUR;
                           const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
                           minLine.setAttribute('x1', 0);
                           minLine.setAttribute('y1', ym);
-                          minLine.setAttribute('x2', width);
+                          minLine.setAttribute('x2', containerWidth);
                           minLine.setAttribute('y2', ym);
-                          minLine.setAttribute('stroke', '#f3f4f6'); // very light gray
+                          minLine.setAttribute('stroke', '#f3f4f6');
                           minLine.setAttribute('stroke-width', '1');
-                          gridGroup.appendChild(minLine);
+                          targetGroup.appendChild(minLine);
                     }
                 }
             }
+        }
+
+        // --- Scheduler Specific Grid Wrapper ---
+        function renderGrid() {
+            const width = scheduleContainer.clientWidth;
+            drawGrid(width, scheduleSvg, gridGroup);
         }
         
         function renderConflicts() {
@@ -2249,6 +2275,185 @@
             applyHighlight();
         }
 
+        // --- Availability View Logic ---
+
+        function getScheduleBounds() {
+            let start = 86400; // Init max
+            let end = 0;       // Init min
+            let hasBlocks = false;
+
+            Object.values(data.blocks).forEach(block => {
+                block.slots.forEach(slot => {
+                    hasBlocks = true;
+                    if (slot.time < start) start = slot.time;
+                    if (slot.time + block.duration > end) end = slot.time + block.duration;
+                });
+            });
+
+            if (!hasBlocks) {
+                // Default to 8am - 4pm if no blocks
+                return { start: 8 * 3600, end: 16 * 3600 };
+            }
+            return { start, end };
+        }
+
+        function updateAvailabilityFilterOptions() {
+            const select = document.getElementById('availabilityFilter');
+            const currentVal = select.value;
+            
+            // Collect types
+            const types = new Set();
+            Object.values(data.resources).forEach(r => {
+                if (r.type && r.type.trim() !== "") types.add(r.type);
+            });
+            
+            select.innerHTML = '<option value="">All Types</option>';
+            Array.from(types).sort().forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                select.appendChild(opt);
+            });
+            
+            // Restore selection if valid
+            if (currentVal && (types.has(currentVal) || currentVal === "")) {
+                select.value = currentVal;
+            } else {
+                select.value = "";
+            }
+        }
+
+        function renderAvailability() {
+            const width = availabilityContainer.clientWidth;
+            if (width === 0) return;
+
+            // Draw grid first
+            drawGrid(width, availabilitySvg, avGridGroup);
+            avBlocksGroup.innerHTML = '';
+
+            const numDays = data.days;
+            const dayWidth = width / numDays;
+            const totalSeconds = 24 * 60 * 60;
+            const bounds = getScheduleBounds();
+            
+            const filterType = document.getElementById('availabilityFilter').value;
+
+            // Pre-calculate resource occupancy map for speed
+            // resourceOccupancy[resId][day] = [{start, end}, ...]
+            const resourceOccupancy = {};
+            Object.keys(data.resources).forEach(rId => {
+                resourceOccupancy[rId] = Array.from({length: numDays}, () => []);
+            });
+
+            Object.entries(data.blocks).forEach(([bId, block]) => {
+                const id = parseInt(bId);
+                // Find all resources linked to this block
+                // (Iterate resources because links are on resource object)
+                Object.entries(data.resources).forEach(([rId, res]) => {
+                    const isLinked = res.links.some(l => l.block === id && l.type === 'MUST');
+                    if (isLinked) {
+                        block.slots.forEach(slot => {
+                            if (slot.day < numDays) {
+                                resourceOccupancy[rId][slot.day].push({
+                                    start: slot.time,
+                                    end: slot.time + block.duration
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+
+            // Process each day
+            for (let d = 0; d < numDays; d++) {
+                // 1. Collect all "critical points" on this day within bounds
+                let points = new Set();
+                points.add(bounds.start);
+                points.add(bounds.end);
+
+                Object.values(resourceOccupancy).forEach(dayOccupancy => {
+                    dayOccupancy[d].forEach(occ => {
+                        // Clamp points to bounds
+                        if (occ.start >= bounds.start && occ.start <= bounds.end) points.add(occ.start);
+                        if (occ.end >= bounds.start && occ.end <= bounds.end) points.add(occ.end);
+                        // Also handle cases where block starts before/ends after bounds
+                        // If block overlaps start boundary
+                        if (occ.start < bounds.start && occ.end > bounds.start) points.add(bounds.start);
+                        // If block overlaps end boundary
+                        if (occ.start < bounds.end && occ.end > bounds.end) points.add(bounds.end);
+                    });
+                });
+
+                const sortedPoints = Array.from(points).sort((a,b) => a - b);
+
+                // 2. Iterate intervals
+                for (let i = 0; i < sortedPoints.length - 1; i++) {
+                    const t1 = sortedPoints[i];
+                    const t2 = sortedPoints[i+1];
+                    const duration = t2 - t1;
+                    if (duration <= 0) continue;
+
+                    // Midpoint for checking occupancy
+                    const mid = t1 + duration / 2;
+
+                    // 3. Find free resources
+                    const freeResources = [];
+                    Object.entries(data.resources).forEach(([rId, res]) => {
+                        // Filter check
+                        if (filterType && filterType !== "" && (res.type || "") !== filterType) {
+                            return; 
+                        }
+                        
+                        const occupancyList = resourceOccupancy[rId][d];
+                        // Check if occupied at midpoint
+                        const isOccupied = occupancyList.some(occ => mid >= occ.start && mid < occ.end);
+                        if (!isOccupied) {
+                            freeResources.push(res.name);
+                        }
+                    });
+
+                    // 4. Draw block if resources are free
+                    if (freeResources.length > 0) {
+                        const colX = d * dayWidth;
+                        const y = (t1 / totalSeconds) * TOTAL_HEIGHT;
+                        const h = (duration / totalSeconds) * TOTAL_HEIGHT;
+
+                        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                        g.setAttribute("class", "availability-block");
+
+                        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        rect.setAttribute('x', colX + 4);
+                        rect.setAttribute('y', y);
+                        rect.setAttribute('width', dayWidth - 8);
+                        rect.setAttribute('height', h);
+                        rect.setAttribute('rx', 2);
+                        rect.setAttribute('ry', 2);
+                        g.appendChild(rect);
+
+                        // Add text label
+                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        text.setAttribute('x', colX + 8);
+                        text.setAttribute('y', y + 12);
+                        // Simple truncation logic for SVG text
+                        const label = freeResources.join(", ");
+                        text.textContent = label;
+                        
+                        // Tooltip for full list
+                        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                        title.textContent = `Free: ${label}`;
+                        g.appendChild(title);
+
+                        g.appendChild(text);
+                        avBlocksGroup.appendChild(g);
+                    }
+                }
+            }
+        }
+        
+        availabilityFilterSelect.addEventListener('change', () => {
+            renderAvailability();
+        });
+
         // --- Drag and Drop Logic ---
         
         let dragState = null;
@@ -2426,43 +2631,41 @@
                 el.classList.remove('related-peer');
             });
             
-            // Commit changes (SWAP LOGIC)
-            if (!dragState.isLocked) {
-                const originDay = dragState.originDay;
-                const originTime = dragState.originTime;
+            // Commit changes
+            const originDay = dragState.originDay;
+            const originTime = dragState.originTime;
 
-                // Identify IDs of dragged items to exclude them from the "displaced" check
-                const draggedIds = new Set(dragState.draggedItems.map(i => `${i.blockId}-${i.slotIndex}`));
+            // Identify IDs of dragged items to exclude them from the "displaced" check
+            const draggedIds = new Set(dragState.draggedItems.map(i => `${i.blockId}-${i.slotIndex}`));
 
-                // Find items currently residing at the target location (that aren't being dragged)
-                // MODIFICATION HERE: Only check for displaced items if SHIFT is held
-                const displacedItems = [];
-                if (e.shiftKey) { // Check shift key state on mouseup
-                    Object.entries(data.blocks).forEach(([bId, blk]) => {
-                         blk.slots.forEach((s, sIdx) => {
-                             const key = `${bId}-${sIdx}`;
-                             if (!draggedIds.has(key) && s.day === newDay && s.time === newTime && !s.locked) {
-                                 displacedItems.push({ blockId: parseInt(bId), slotIndex: sIdx });
-                             }
-                         });
-                    });
-                }
-
-                // Prepare moves
-                const moves = [];
-
-                // 1. Dragged items -> Target
-                dragState.draggedItems.forEach(item => {
-                     moves.push({ blockId: item.blockId, slotIndex: item.slotIndex, day: newDay, time: newTime });
+            // Find items currently residing at the target location (that aren't being dragged)
+            // MODIFICATION HERE: Only check for displaced items if SHIFT is held
+            const displacedItems = [];
+            if (e.shiftKey) { // Check shift key state on mouseup
+                Object.entries(data.blocks).forEach(([bId, blk]) => {
+                     blk.slots.forEach((s, sIdx) => {
+                         const key = `${bId}-${sIdx}`;
+                         if (!draggedIds.has(key) && s.day === newDay && s.time === newTime && !s.locked) {
+                             displacedItems.push({ blockId: parseInt(bId), slotIndex: sIdx });
+                         }
+                     });
                 });
-
-                // 2. Displaced items -> Origin
-                displacedItems.forEach(item => {
-                     moves.push({ blockId: item.blockId, slotIndex: item.slotIndex, day: originDay, time: originTime });
-                });
-
-                applyBulkMoves(moves);
             }
+
+            // Prepare moves
+            const moves = [];
+
+            // 1. Dragged items -> Target
+            dragState.draggedItems.forEach(item => {
+                 moves.push({ blockId: item.blockId, slotIndex: item.slotIndex, day: newDay, time: newTime });
+            });
+
+            // 2. Displaced items -> Origin
+            displacedItems.forEach(item => {
+                 moves.push({ blockId: item.blockId, slotIndex: item.slotIndex, day: originDay, time: originTime });
+            });
+
+            applyBulkMoves(moves);
             
             // Re-render
             renderBlocks();
@@ -2476,6 +2679,9 @@
             if (document.getElementById('scheduler').style.display !== 'none') {
                 renderGrid();
                 renderBlocks();
+            }
+            if (document.getElementById('availability').style.display !== 'none') {
+                renderAvailability();
             }
         });
 
@@ -2501,6 +2707,9 @@
             if (document.getElementById('scheduler').style.display !== 'none') {
                 renderGrid();
                 renderBlocks();
+            }
+            if (document.getElementById('availability').style.display !== 'none') {
+                renderAvailability();
             }
         });
 
@@ -2603,7 +2812,6 @@
 
         // Callbacks for Undo/Redo/Load
         const onNewBlock = (id) => {
-           console.log('UI: New block detected:', id);
            const existingRow = blockTableBody.querySelector(`tr[data-id="${id}"]`);
            if (!existingRow) {
              const row = createBlockRow(id);
@@ -2611,10 +2819,10 @@
            }
            if (linkerDiv.style?.display !== 'none') renderLinker();
            if (schedulerDiv.style?.display !== 'none') renderBlocks();
+           if (availabilityDiv.style?.display !== 'none') renderAvailability();
         };
         
         const onNewResource = (id) => {
-           console.log('UI: New resource detected:', id);
            // Check if row already exists to avoid duplicates
            const existingRow = resourceTableBody.querySelector(`tr[data-id="${id}"]`);
            if (!existingRow) {
@@ -2622,6 +2830,7 @@
              if (row) resourceTableBody.appendChild(row);
            }
            if (linkerDiv.style.display !== 'none') renderLinker();
+           if (availabilityDiv.style?.display !== 'none') renderAvailability();
            updateHighlightDropdown(); // Ensure dropdown is updated on load/undo
         };
 
@@ -2629,6 +2838,7 @@
         
         const views = {
           scheduler: schedulerDiv,
+          availability: availabilityDiv,
           blocks: blockEditorDiv,
           resources: resourceEditorDiv,
           linker: linkerDiv,
@@ -2637,6 +2847,7 @@
 
         const viewBtns = {
           scheduler: document.getElementById('viewSchedulerBtn'),
+          availability: document.getElementById('viewAvailabilityBtn'),
           blocks: document.getElementById('viewBlocksBtn'),
           resources: document.getElementById('viewResourcesBtn'),
           linker: document.getElementById('viewLinkerBtn'),
@@ -2644,6 +2855,7 @@
         };
 
         const scheduleTools = document.getElementById('schedulewindowtools');
+        const availabilityTools = document.getElementById('availabilitytools');
 
         function switchView(viewName) {
           // 1. Hide all views
@@ -2652,7 +2864,7 @@
           // 2. Show selected view
           if (views[viewName]) {
             views[viewName].style.display = 'flex'; // Changed to Flex for scheduler
-            if (viewName !== 'scheduler') {
+            if (viewName !== 'scheduler' && viewName !== 'availability') {
                 views[viewName].style.display = 'block'; // Block for others
             }
             
@@ -2667,6 +2879,12 @@
                 renderBlocks();
               });
             }
+            if (viewName === 'availability') {
+                updateAvailabilityFilterOptions();
+                requestAnimationFrame(() => {
+                    renderAvailability();
+                });
+            }
           }
 
           // 3. Update buttons
@@ -2680,6 +2898,12 @@
             scheduleTools.style.display = 'flex';
           } else {
             scheduleTools.style.display = 'none';
+          }
+          
+          if (viewName === 'availability') {
+            availabilityTools.style.display = 'flex';
+          } else {
+            availabilityTools.style.display = 'none';
           }
         }
 
@@ -2738,6 +2962,7 @@
                 renderGrid(); // Refresh grid
                 renderBlocks();
               }
+              if (availabilityDiv.style?.display !== 'none') renderAvailability();
             } catch (err) {
               console.error(err);
               alert("Failed to parse JSON file.");
@@ -2756,6 +2981,7 @@
             renderGrid(); // Refresh grid
             renderBlocks();
           }
+          if (availabilityDiv.style.display !== 'none') renderAvailability();
         });
 
         redoBtn.addEventListener('click', () => {
@@ -2766,6 +2992,7 @@
              renderGrid(); // Refresh grid
              renderBlocks();
           }
+          if (availabilityDiv.style.display !== 'none') renderAvailability();
         });
         
         // --- Optimization Tools ---
