@@ -465,6 +465,18 @@
                <input type="number" id="settingEndHourInput" class="editor-input" min="1" max="24" value="17">
              </td>
           </tr>
+          <tr>
+             <td>Pixels per Minute (Height)</td>
+             <td>
+               <input type="number" id="settingPixelsPerMinuteInput" class="editor-input" min="0.5" max="10" step="0.5" value="1">
+             </td>
+          </tr>
+          <tr>
+             <td>Snap Interval (Minutes)</td>
+             <td>
+               <input type="number" id="settingSnapIntervalInput" class="editor-input" min="1" max="60" value="10">
+             </td>
+          </tr>
         </tbody>
       </table>
       
@@ -567,6 +579,8 @@
         dayLabels: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
         startHour: 8,
         endHour: 17,
+        pixelsPerMinute: 1,
+        snapInterval: 10,
         blocks: {},
         resources: {},
       };
@@ -893,6 +907,22 @@
         if (data.dayLabels[index] === label) return;
         recordStateForUndo();
         data.dayLabels[index] = label;
+        notifyAllListeners();
+      }
+
+      function setPixelsPerMinute(val) {
+        if (val < 0.1 || val > 10) return;
+        if (data.pixelsPerMinute === val) return;
+        recordStateForUndo();
+        data.pixelsPerMinute = val;
+        notifyAllListeners();
+      }
+
+      function setSnapInterval(val) {
+        if (val < 1 || val > 60) return;
+        if (data.snapInterval === val) return;
+        recordStateForUndo();
+        data.snapInterval = val;
         notifyAllListeners();
       }
 
@@ -1573,6 +1603,8 @@
             dayLabels: loadedData.dayLabels || ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
             startHour: loadedData.startHour !== undefined ? loadedData.startHour : 8,
             endHour: loadedData.endHour !== undefined ? loadedData.endHour : 17,
+            pixelsPerMinute: loadedData.pixelsPerMinute || 1,
+            snapInterval: loadedData.snapInterval || 10,
             blocks: newBlocks,
             resources: newResources
         };
@@ -1975,9 +2007,8 @@
 
 
         // --- Shared Grid Logic ---
-        const PIXELS_PER_HOUR = 60; // 1 min = 1 px
         function getVisibleHeight() {
-            return (data.endHour - data.startHour) * PIXELS_PER_HOUR;
+            return (data.endHour - data.startHour) * 60 * data.pixelsPerMinute;
         }
 
         function drawGrid(containerWidth, targetSvg, targetGroup) {
@@ -2023,7 +2054,7 @@
 
             // Draw Time Rows
             for (let h = data.startHour; h <= data.endHour; h++) {
-                const y = (h - data.startHour) * PIXELS_PER_HOUR;
+                const y = (h - data.startHour) * 60 * data.pixelsPerMinute;
                 
                 const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 line.setAttribute('x1', 0);
@@ -2048,8 +2079,8 @@
                 targetGroup.appendChild(text);
 
                 if (h < data.endHour) {
-                    for (let m = 10; m < 60; m += 10) {
-                          const ym = y + (m / 60) * PIXELS_PER_HOUR;
+                    for (let m = data.snapInterval; m < 60; m += data.snapInterval) {
+                          const ym = y + (m * data.pixelsPerMinute);
                           const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
                           minLine.setAttribute('x1', 0);
                           minLine.setAttribute('y1', ym);
@@ -2229,7 +2260,7 @@
             const draggedH = parseFloat(draggedRect.getAttribute('height'));
             
             const cxA = (newDay * dayWidth) + (dayWidth / 2); // Center of day column
-            const cyA = (newTime - data.startHour * 3600) / 60 + (draggedH / 2);
+            const cyA = ((newTime - data.startHour * 3600) / 60) * data.pixelsPerMinute + (draggedH / 2);
 
             // 5. Draw grouped conflicts
             Object.values(groupedConflicts).forEach(group => {
@@ -2394,8 +2425,8 @@
                     
                     cluster.forEach(slot => {
                         const colX = (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
-                        const y = (slot.time - data.startHour * 3600) / 60;
-                        const h = (slot.duration / 60);
+                        const y = ((slot.time - data.startHour * 3600) / 60) * data.pixelsPerMinute;
+                        const h = (slot.duration / 60) * data.pixelsPerMinute;
                         
                         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                         g.setAttribute("class", "schedule-block " + (slot.locked ? "locked" : ""));
@@ -2621,8 +2652,8 @@
                     // 4. Draw block if resources are free
                     if (freeResources.length > 0) {
                         const colX = d * dayWidth;
-                        const y = (t1 - data.startHour * 3600) / 60;
-                        const h = (duration / 60);
+                        const y = ((t1 - data.startHour * 3600) / 60) * data.pixelsPerMinute;
+                        const h = (duration / 60) * data.pixelsPerMinute;
 
                         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                         g.setAttribute("class", "availability-block");
@@ -2818,11 +2849,12 @@
             const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
             const targetPixelY = currentMouseY - dragState.offsetY;
             
-            // Convert to seconds: (Pixels * 60 seconds/pixel) + Start Hour Offset
-            let rawTime = (targetPixelY * 60) + (data.startHour * 3600);
+            // Convert to seconds: (Pixels / PixelsPerMinute * 60 seconds) + Start Hour Offset
+            let rawTime = (targetPixelY / data.pixelsPerMinute * 60) + (data.startHour * 3600);
             
-            // Snap to 10 minutes (600 seconds)
-            let newTime = Math.round(rawTime / 600) * 600;
+            // Snap to snapInterval (converted to seconds)
+            const snapSecs = data.snapInterval * 60;
+            let newTime = Math.round(rawTime / snapSecs) * snapSecs;
             
             // Clamp Time (using the first block in the group as reference)
             const firstBlock = getBlock(dragState.draggedItems[0].blockId);
@@ -2840,7 +2872,7 @@
                 const rectWidth = parseFloat(rect.getAttribute('width'));
 
                 const targetX = (newDay * dayWidth) + (dayWidth - rectWidth) / 2;
-                const targetY = (newTime - data.startHour * 3600) / 60;
+                const targetY = ((newTime - data.startHour * 3600) / 60) * data.pixelsPerMinute;
                 
                 const translateX = targetX - originalRectX;
                 const translateY = targetY - originalRectY;
@@ -2873,8 +2905,9 @@
             // 2. New Time
             const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
             const targetPixelY = currentMouseY - dragState.offsetY;
-            let rawTime = (targetPixelY * 60) + (data.startHour * 3600);
-            let newTime = Math.round(rawTime / 600) * 600;
+            let rawTime = (targetPixelY / data.pixelsPerMinute * 60) + (data.startHour * 3600);
+            const snapSecs = data.snapInterval * 60;
+            let newTime = Math.round(rawTime / snapSecs) * snapSecs;
             
             // 24h Clamping
             const firstBlock = getBlock(dragState.draggedItems[0].blockId);
@@ -2965,6 +2998,12 @@
            if (settingEndHourInput) {
                settingEndHourInput.value = data.endHour;
            }
+           if (document.getElementById('settingPixelsPerMinuteInput')) {
+               document.getElementById('settingPixelsPerMinuteInput').value = data.pixelsPerMinute;
+           }
+           if (document.getElementById('settingSnapIntervalInput')) {
+               document.getElementById('settingSnapIntervalInput').value = data.snapInterval;
+           }
            
            if (dayLabelsTableBody) {
                dayLabelsTableBody.innerHTML = '';
@@ -3020,6 +3059,24 @@
             if (val > 24) val = 24;
             e.target.value = val;
             setEndHour(val);
+            refreshVisibleViews();
+        });
+
+        document.getElementById('settingPixelsPerMinuteInput').addEventListener('change', (e) => {
+            let val = parseFloat(e.target.value);
+            if (isNaN(val) || val < 0.1) val = 0.1;
+            if (val > 10) val = 10;
+            e.target.value = val;
+            setPixelsPerMinute(val);
+            refreshVisibleViews();
+        });
+
+        document.getElementById('settingSnapIntervalInput').addEventListener('change', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val) || val < 1) val = 1;
+            if (val > 60) val = 60;
+            e.target.value = val;
+            setSnapInterval(val);
             refreshVisibleViews();
         });
 
