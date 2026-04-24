@@ -479,6 +479,13 @@
       top: 0;
     }
 
+    .time-axis-spacer {
+      width: 40px;
+      flex-shrink: 0;
+      border-right: 1px solid #e5e7eb;
+      background-color: #f3f4f6;
+    }
+
     .day-header {
       flex: 1;
       text-align: center;
@@ -711,6 +718,21 @@
             </select>
           </td>
         </tr>
+        <tr>
+          <td>Time Format</td>
+          <td>
+            <select id="settingTimeFormatInput" class="editor-input">
+              <option value="24h">24 Hour</option>
+              <option value="12h">12 Hour (AM/PM)</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td>Print Subtitle</td>
+          <td>
+            <input type="text" id="settingPrintSubtitleInput" class="editor-input" placeholder="e.g., 2026-2027 School Year">
+          </td>
+        </tr>
       </tbody>
     </table>
 
@@ -827,7 +849,9 @@
       snapInterval: 10,
       blocks: {},
       resources: {},
-      printColorMode: 'color'
+      printColorMode: 'color',
+      timeFormat: '24h',
+      printSubtitle: ''
     };
 
     // For debugging purposes.
@@ -1145,6 +1169,22 @@
       recordStateForUndo();
       data.endHour = hour;
       notifyAllListeners();
+    }
+
+    function formatTime(hour) {
+      const h = Math.floor(hour);
+      const m = Math.round((hour - h) * 60);
+      if (data.timeFormat === '12h') {
+        const ampm = h >= 24 || h < 12 ? 'AM' : 'PM';
+        let h12 = h % 24;
+        if (h12 === 0) h12 = 12; // 0 is 12 AM
+        if (h12 > 12) h12 -= 12; // 13 is 1 PM
+        if (h12 === 0) h12 = 12;
+        const mStr = m > 0 ? `:${m.toString().padStart(2, '0')}` : '';
+        return `${h12}${mStr} ${ampm}`;
+      } else {
+        return `${h}:${m.toString().padStart(2, '0')}`;
+      }
     }
 
     function setDayLabel(index, label) {
@@ -2366,6 +2406,7 @@
 
         if (containerWidth === 0) return;
 
+        const TIME_LABEL_WIDTH = 40;
         const visibleHeight = getVisibleHeight();
         // Only set width/height attributes if not already handling via viewBox in print
         if (!targetSvg.hasAttribute('viewBox')) {
@@ -2374,11 +2415,21 @@
         }
 
         const numDays = data.days;
-        const dayWidth = containerWidth / numDays;
+        const dayWidth = (containerWidth - TIME_LABEL_WIDTH) / numDays;
+
+        // Draw Time Column Background Spacer
+        const timeRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        timeRect.setAttribute('x', 0);
+        timeRect.setAttribute('y', 0);
+        timeRect.setAttribute('width', TIME_LABEL_WIDTH);
+        timeRect.setAttribute('height', visibleHeight);
+        timeRect.setAttribute('fill', '#f3f4f6');
+        timeRect.setAttribute('stroke', '#e5e7eb');
+        targetGroup.appendChild(timeRect);
 
         // Draw Day Columns
-        for (let i = 1; i < numDays; i++) {
-          const x = i * dayWidth;
+        for (let i = 1; i <= numDays; i++) {
+          const x = TIME_LABEL_WIDTH + (i - 1) * dayWidth;
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
           line.setAttribute('x1', x);
           line.setAttribute('y1', 0);
@@ -2390,7 +2441,7 @@
         }
 
         // Draw Time Rows
-        for (let h = data.startHour; h <= data.endHour; h++) {
+        for (let h = Math.floor(data.startHour); h <= Math.ceil(data.endHour); h++) {
           const y = (h - data.startHour) * 60 * data.pixelsPerMinute;
 
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -2412,14 +2463,14 @@
           text.setAttribute('stroke', 'white');
           text.setAttribute('stroke-width', '3');
           text.setAttribute('paint-order', 'stroke');
-          text.textContent = `${h}:00`;
+          text.textContent = formatTime(h);
           targetGroup.appendChild(text);
 
           if (h < data.endHour) {
             for (let m = data.snapInterval; m < 60; m += data.snapInterval) {
               const ym = y + (m * data.pixelsPerMinute);
               const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-              minLine.setAttribute('x1', 0);
+              minLine.setAttribute('x1', TIME_LABEL_WIDTH);
               minLine.setAttribute('y1', ym);
               minLine.setAttribute('x2', containerWidth);
               minLine.setAttribute('y2', ym);
@@ -2439,10 +2490,17 @@
 
         if (containerWidth === 0) return;
 
+        const TIME_LABEL_WIDTH = 40;
+        const spacer = document.createElement('div');
+        spacer.className = 'time-axis-spacer';
+        spacer.style.width = `${TIME_LABEL_WIDTH}px`;
+        headerRow.appendChild(spacer);
+
         const numDays = data.days;
         for (let i = 0; i < numDays; i++) {
           const div = document.createElement('div');
           div.className = 'day-header';
+          div.style.flex = '1';
           div.textContent = data.dayLabels[i] || `Day ${i + 1}`;
           headerRow.appendChild(div);
         }
@@ -2608,12 +2666,13 @@
 
         // 4. Calculate visual coords of dragged element
         const width = scheduleContainer.clientWidth;
-        const dayWidth = width / data.days;
+        const TIME_LABEL_WIDTH = 40;
+        const dayWidth = (width - TIME_LABEL_WIDTH) / data.days;
 
         const draggedRect = draggedElement.querySelector('rect');
         const draggedH = parseFloat(draggedRect.getAttribute('height'));
 
-        const cxA = (newDay * dayWidth) + (dayWidth / 2); // Center of day column
+        const cxA = TIME_LABEL_WIDTH + (newDay * dayWidth) + (dayWidth / 2); // Center of day column
         const cyA = ((newTime - data.startHour * 3600) / 60) * data.pixelsPerMinute + (draggedH / 2);
 
         // 5. Draw grouped conflicts
@@ -2686,7 +2745,8 @@
         if (width === 0) return;
 
         const numDays = data.days;
-        const dayWidth = width / numDays;
+        const TIME_LABEL_WIDTH = 40;
+        const dayWidth = (width - TIME_LABEL_WIDTH) / numDays;
 
         const startLimit = data.startHour * 3600;
         const endLimit = data.endHour * 3600;
@@ -2761,7 +2821,7 @@
             cluster.forEach(slot => {
               let placed = false;
               for (let i = 0; i < columns.length; i++) {
-                if (columns[i] <= slot.time) {
+                if (slot.time >= columns[i]) {
                   slot.colIndex = i;
                   columns[i] = slot.time + slot.duration;
                   placed = true;
@@ -2776,7 +2836,7 @@
 
             const numCols = columns.length;
             cluster.forEach(slot => {
-              const colX = (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
+              const colX = TIME_LABEL_WIDTH + (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
               const y = ((slot.time - data.startHour * 3600) / 60) * data.pixelsPerMinute;
               const h = (slot.duration / 60) * data.pixelsPerMinute;
 
@@ -2847,6 +2907,15 @@
               const availWidth = (dayWidth / numCols) - 8;
               let displayText = title;
 
+              // Tooltip with formatted time
+              const t1 = slot.time / 3600;
+              const t2 = (slot.time + slot.duration) / 3600;
+              const timeLabelStr = `${formatTime(t1)} - ${formatTime(t2)}`;
+
+              const titleEl = document.createElementNS("http://www.w3.org/2000/svg", "title");
+              titleEl.textContent = `${title} (${timeLabelStr})`;
+              g.appendChild(titleEl);
+
               // Progressive truncation (no ellipsis)
               const charWidth = fontSize * 0.55; // Estimated average char width
               if (title.length * charWidth > availWidth) {
@@ -2890,7 +2959,7 @@
           header.appendChild(title);
           const subtitle = document.createElement('div');
           subtitle.className = 'subtitle';
-          subtitle.textContent = ``;
+          subtitle.textContent = data.printSubtitle || '';
           header.appendChild(subtitle);
           page.appendChild(header);
 
@@ -2949,6 +3018,13 @@
 
           // Populate headers
           const numDays = data.days;
+          const TIME_LABEL_WIDTH = 40;
+          const spacer = document.createElement('div');
+          spacer.className = 'time-axis-spacer';
+          // Using percentage for print view to match SVG viewBox scaling
+          spacer.style.width = (TIME_LABEL_WIDTH / virtualWidth * 100) + '%';
+          headerRow.appendChild(spacer);
+
           for (let i = 0; i < numDays; i++) {
             const div = document.createElement('div');
             div.className = 'day-header';
@@ -3489,6 +3565,12 @@
         if (document.getElementById('settingPrintColorModeInput')) {
           document.getElementById('settingPrintColorModeInput').value = data.printColorMode || 'color';
         }
+        if (document.getElementById('settingTimeFormatInput')) {
+          document.getElementById('settingTimeFormatInput').value = data.timeFormat || '24h';
+        }
+        if (document.getElementById('settingPrintSubtitleInput')) {
+          document.getElementById('settingPrintSubtitleInput').value = data.printSubtitle || '';
+        }
 
         if (dayLabelsTableBody) {
           dayLabelsTableBody.innerHTML = '';
@@ -3526,11 +3608,12 @@
 
         setNumberOfDays(val);
         // Refresh grid if visible
+        updateSettingsView();
         refreshVisibleViews();
       });
 
       settingStartHourInput.addEventListener('change', (e) => {
-        let val = parseInt(e.target.value);
+        let val = parseFloat(e.target.value);
         if (isNaN(val) || val < 0) val = 0;
         if (val >= data.endHour) val = data.endHour - 1;
         e.target.value = val;
@@ -3539,7 +3622,7 @@
       });
 
       settingEndHourInput.addEventListener('change', (e) => {
-        let val = parseInt(e.target.value);
+        let val = parseFloat(e.target.value);
         if (isNaN(val) || val <= data.startHour) val = data.startHour + 1;
         if (val > 24) val = 24;
         e.target.value = val;
@@ -3568,6 +3651,15 @@
       document.getElementById('settingPrintColorModeInput').addEventListener('change', (e) => {
         data.printColorMode = e.target.value;
         refreshVisibleViews();
+      });
+
+      document.getElementById('settingTimeFormatInput').addEventListener('change', (e) => {
+        data.timeFormat = e.target.value;
+        refreshVisibleViews();
+      });
+
+      document.getElementById('settingPrintSubtitleInput').addEventListener('input', (e) => {
+        data.printSubtitle = e.target.value;
       });
 
       function refreshVisibleViews() {
