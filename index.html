@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scheduler</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: sans-serif;
       margin: 0;
@@ -475,6 +479,7 @@
       position: sticky;
       top: 0;
     }
+
     .day-header {
       flex: 1;
       text-align: center;
@@ -489,8 +494,128 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .day-header:last-child {
       border-right: none;
+    }
+
+    /* Print View Styles */
+    @media print {
+      @page {
+        margin: 0;
+      }
+
+      body,
+      html {
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      #toolbar,
+      #settingseditor,
+      #blockeditor,
+      #resourceeditor,
+      #scheduler,
+      #availability,
+      #linker {
+        display: none !important;
+      }
+
+      #printview {
+        display: block !important;
+        height: auto !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+      }
+
+      .day-header-row {
+        position: static !important;
+        width: 100% !important;
+        display: flex !important;
+        background-color: #f9fafb !important;
+        border-bottom: 2px solid #d1d5db !important;
+      }
+
+      .day-header {
+        flex: 1 !important;
+        border-right: 1px solid #e5e7eb !important;
+        text-align: center !important;
+        padding: 6px 4px !important;
+      }
+
+      .print-page {
+        page-break-after: always;
+        break-after: page;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        padding: 15mm !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: none !important;
+      }
+
+      /* Ensure background colors print */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
+
+    #printview {
+      flex-direction: column;
+      overflow: auto;
+      background-color: #f3f4f6;
+      padding: 20px;
+    }
+
+    .print-page {
+      background: white;
+      margin: 0 auto 20px auto;
+      padding: 40px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      width: 210mm;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      border: 1px solid #e5e7eb;
+      align-items: center;
+    }
+
+    .print-header {
+      border-bottom: 2px solid #374151;
+      padding-bottom: 10px;
+      color: #111827;
+    }
+
+    .print-header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .print-header .subtitle {
+      font-size: 14px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    /* Black & White Mode Classes */
+    .bw-block rect {
+      fill: white !important;
+      stroke: black !important;
+      stroke-width: 2px !important;
+    }
+
+    .bw-block text {
+      fill: black !important;
     }
   </style>
 </head>
@@ -534,6 +659,7 @@
       <button id="viewResourcesBtn">People</button>
       <button id="viewLinkerBtn">Links</button>
       <button id="viewSettingsBtn">Settings</button>
+      <button id="viewPrintBtn">Print</button>
     </div>
   </div>
 
@@ -575,6 +701,15 @@
           <td>Snap Interval (Minutes)</td>
           <td>
             <input type="number" id="settingSnapIntervalInput" class="editor-input" min="1" max="60" value="10">
+          </td>
+        </tr>
+        <tr>
+          <td>Print Color Mode</td>
+          <td>
+            <select id="settingPrintColorModeInput" class="editor-input">
+              <option value="color">Color</option>
+              <option value="bw">Black & White</option>
+            </select>
           </td>
         </tr>
       </tbody>
@@ -672,6 +807,8 @@
     </div>
   </div>
 
+  <div id="printview" style="display:none;"></div>
+
   <div id="linker" style="display:none;">
     <div id="linkerScroll" style="overflow: auto; max-height: 100%; max-width: 100%;">
       <table id="linkerTable" class="linker-table">
@@ -691,6 +828,7 @@
       snapInterval: 10,
       blocks: {},
       resources: {},
+      printColorMode: 'color'
     };
 
     // For debugging purposes.
@@ -1713,6 +1851,7 @@
         endHour: loadedData.endHour !== undefined ? loadedData.endHour : 17,
         pixelsPerMinute: loadedData.pixelsPerMinute || 1,
         snapInterval: loadedData.snapInterval || 10,
+        printColorMode: loadedData.printColorMode || 'color',
         blocks: newBlocks,
         resources: newResources
       };
@@ -1771,6 +1910,7 @@
       const blockEditorDiv = document.getElementById('blockeditor');
       const resourceEditorDiv = document.getElementById('resourceeditor');
       const settingsEditorDiv = document.getElementById('settingseditor');
+      const printview = document.getElementById('printview');
       const linkerScroll = document.getElementById('linkerScroll');
 
       const scheduleContainer = document.getElementById('scheduleContainer');
@@ -2214,8 +2354,11 @@
         if (containerWidth === 0) return;
 
         const visibleHeight = getVisibleHeight();
-        targetSvg.setAttribute('width', containerWidth);
-        targetSvg.setAttribute('height', visibleHeight);
+        // Only set width/height attributes if not already handling via viewBox in print
+        if (!targetSvg.hasAttribute('viewBox')) {
+          targetSvg.setAttribute('width', containerWidth);
+          targetSvg.setAttribute('height', visibleHeight);
+        }
 
         const numDays = data.days;
         const dayWidth = containerWidth / numDays;
@@ -2521,9 +2664,12 @@
       }
 
       function renderBlocks() {
-        blocksGroup.innerHTML = '';
-
         const width = scheduleContainer.clientWidth;
+        renderBlocksTo(blocksGroup, width, null, true);
+      }
+
+      function renderBlocksTo(targetGroup, width, filterFunc = null, isInteractive = true, colorModeOverride = null) {
+        targetGroup.innerHTML = '';
         if (width === 0) return;
 
         const numDays = data.days;
@@ -2535,7 +2681,11 @@
         // 1. Flatten all slots into a list with metadata
         let visibleSlots = [];
         let stagedSlots = [];
-        Object.entries(data.blocks).forEach(([id, block]) => { // Use entries to get ID
+        Object.entries(data.blocks).forEach(([id, block]) => {
+          const blockId = parseInt(id);
+          // Apply filter if provided
+          if (filterFunc && !filterFunc(blockId)) return;
+
           block.slots.forEach((slot, index) => {
             if (slot.day < numDays) {
               const slotEnd = slot.time + block.duration;
@@ -2545,8 +2695,8 @@
                 ...slot,
                 duration: block.duration,
                 name: block.name,
-                blockId: parseInt(id),
-                originalIndex: index // Capture index for drag logic
+                blockId: blockId,
+                originalIndex: index
               };
 
               if (isStaged) {
@@ -2558,33 +2708,29 @@
           });
         });
 
-        // Render staged blocks
-        renderStagedBlocks(stagedSlots);
+        // Render staged blocks (only for interactive main view)
+        if (isInteractive) {
+          renderStagedBlocks(stagedSlots);
+        }
 
         // 2. Process each day
         for (let d = 0; d < numDays; d++) {
-          // Get slots for this day
           let daySlots = visibleSlots.filter(s => s.day === d);
-
-          // Sort by start time, then duration (desc) to place larger items first
           daySlots.sort((a, b) => {
             if (a.time !== b.time) return a.time - b.time;
             return b.duration - a.duration;
           });
 
-          // Group into overlapping clusters
           let clusters = [];
           let currentCluster = [];
           let clusterEnd = -1;
 
           daySlots.forEach(slot => {
             const slotEnd = slot.time + slot.duration;
-
             if (currentCluster.length === 0) {
               currentCluster.push(slot);
               clusterEnd = slotEnd;
             } else {
-              // If this slot starts before the cluster ends, it overlaps (or is contiguous)
               if (slot.time < clusterEnd) {
                 currentCluster.push(slot);
                 if (slotEnd > clusterEnd) clusterEnd = slotEnd;
@@ -2597,12 +2743,9 @@
           });
           if (currentCluster.length > 0) clusters.push(currentCluster);
 
-          // Process clusters to assign columns
           clusters.forEach(cluster => {
-            let columns = []; // array of end times for each column
-
+            let columns = [];
             cluster.forEach(slot => {
-              // Find first column where this slot fits
               let placed = false;
               for (let i = 0; i < columns.length; i++) {
                 if (columns[i] <= slot.time) {
@@ -2618,9 +2761,7 @@
               }
             });
 
-            // Render slots in this cluster
             const numCols = columns.length;
-
             cluster.forEach(slot => {
               const colX = (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
               const y = ((slot.time - data.startHour * 3600) / 60) * data.pixelsPerMinute;
@@ -2628,30 +2769,37 @@
 
               const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
               g.setAttribute("class", "schedule-block " + (slot.locked ? "locked" : ""));
-              g.setAttribute("data-block-id", slot.blockId);
-              g.setAttribute("data-slot-index", slot.originalIndex);
 
-              // Setup for interaction
-              g.addEventListener('mousedown', (e) => {
-                // Pass locked state to handler
-                handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, slot.locked, g);
-              });
+              // Apply B&W logic
+              const currentMode = colorModeOverride || data.printColorMode;
+              if (currentMode === 'bw') {
+                g.classList.add('bw-block');
+              }
+
+              if (isInteractive) {
+                g.setAttribute("data-block-id", slot.blockId);
+                g.setAttribute("data-slot-index", slot.originalIndex);
+                g.addEventListener('mousedown', (e) => {
+                  handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, slot.locked, g);
+                });
+              }
 
               const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-              rect.setAttribute('x', colX + 2); // +2 margin
+              rect.setAttribute('x', colX + 2);
               rect.setAttribute('y', y);
-              rect.setAttribute('width', (dayWidth / numCols) - 4); // 4px gap total
+              rect.setAttribute('width', (dayWidth / numCols) - 4);
               rect.setAttribute('height', h);
               rect.setAttribute('rx', 4);
               rect.setAttribute('ry', 4);
-              rect.setAttribute('fill', data.blocks[slot.blockId].color || '#60a5fa');
-              rect.setAttribute('stroke', darkenColor(data.blocks[slot.blockId].color || '#60a5fa', 0.2));
+
+              const blockColor = data.blocks[slot.blockId].color || '#60a5fa';
+              rect.setAttribute('fill', blockColor);
+              rect.setAttribute('stroke', darkenColor(blockColor, 0.2));
               rect.setAttribute('stroke-width', 1);
               rect.setAttribute('opacity', 0.9);
               g.appendChild(rect);
 
               if (slot.locked) {
-                // Overlay pattern rect for locked state
                 const patternRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 patternRect.setAttribute('x', colX + 2);
                 patternRect.setAttribute('y', y);
@@ -2659,30 +2807,141 @@
                 patternRect.setAttribute('height', h);
                 patternRect.setAttribute('rx', 4);
                 patternRect.setAttribute('ry', 4);
-                patternRect.setAttribute('fill', 'url(#stripedPattern)');
+                patternRect.setAttribute('fill', isInteractive ? 'url(#stripedPattern)' : 'url(#stripedPatternPrint)');
                 patternRect.setAttribute('pointer-events', 'none');
                 g.appendChild(patternRect);
               }
 
               const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-              text.setAttribute('x', colX + 6);
-              text.setAttribute('y', y + 16);
-              text.setAttribute('font-size', '12');
-              text.setAttribute('font-family', 'sans-serif');
-              text.setAttribute('fill', slot.locked ? '#374151' : 'white');
-              text.setAttribute('pointer-events', 'none');
-              text.textContent = slot.name;
+              text.setAttribute('x', colX + (dayWidth / numCols) / 2);
+              text.setAttribute('y', y + (h / 2));
+              text.setAttribute('text-anchor', 'middle');
+              text.setAttribute('dominant-baseline', 'middle');
+              text.setAttribute('font-size', h < 20 ? '9' : '11');
+              text.setAttribute('font-weight', '600');
+              text.setAttribute('fill', 'white');
+              text.style.pointerEvents = 'none';
 
+              const title = slot.name;
+              if (h < 15) {
+                text.textContent = "";
+              } else if (h < 30) {
+                text.textContent = title.substring(0, 5) + "...";
+              } else {
+                text.textContent = title;
+              }
               g.appendChild(text);
-              blocksGroup.appendChild(g);
+              targetGroup.appendChild(g);
             });
           });
         }
 
-        // Render conflicts after blocks are placed (so we can find their positions)
-        renderConflicts();
-        // Apply highlight if active
-        applyHighlight();
+        if (isInteractive) {
+          renderConflicts();
+          applyHighlight();
+        }
+      }
+
+      function updatePrintView() {
+        printview.innerHTML = '';
+
+        // 1. Get all highlight options
+        updateHighlightDropdown(); // Ensure it's up to date
+        const options = Array.from(highlightSelect.options);
+
+        options.forEach(opt => {
+          const mode = opt.value;
+          const label = opt.textContent;
+
+          // 2. Create Page
+          const page = document.createElement('div');
+          page.className = 'print-page';
+
+          // 3. Header
+          const header = document.createElement('div');
+          header.className = 'print-header';
+          header.style.width = '100%';
+          const title = document.createElement('h1');
+          title.textContent = label === "None" ? "Full Schedule" : `Schedule: ${label}`;
+          header.appendChild(title);
+          const subtitle = document.createElement('div');
+          subtitle.className = 'subtitle';
+          subtitle.textContent = ``;
+          header.appendChild(subtitle);
+          page.appendChild(header);
+
+          // 4. Grid Container
+          const gridWrapper = document.createElement('div');
+          gridWrapper.style.width = '100%';
+          gridWrapper.style.position = 'relative';
+
+          const headerRow = document.createElement('div');
+          headerRow.className = 'day-header-row';
+          gridWrapper.appendChild(headerRow);
+
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.style.width = '100%';
+          svg.style.display = 'block';
+
+          // Virtual dimensions for responsiveness
+          const virtualWidth = 1000;
+          const totalHeight = (data.endHour - data.startHour) * 60 * data.pixelsPerMinute;
+          svg.setAttribute('viewBox', `0 0 ${virtualWidth} ${totalHeight}`);
+          svg.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+          // Important: height must be set to ensure the SVG occupies space correctly in all browsers
+          svg.style.height = 'auto';
+
+          // Add defs with stripedPattern to each SVG to ensure locked icons show in print
+          const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+          const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+          pattern.setAttribute("id", "stripedPatternPrint"); // Use unique ID to avoid confusion
+          pattern.setAttribute("patternUnits", "userSpaceOnUse");
+          pattern.setAttribute("width", "10");
+          pattern.setAttribute("height", "10");
+          pattern.setAttribute("patternTransform", "rotate(45)");
+          const patternLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          patternLine.setAttribute("x1", "0");
+          patternLine.setAttribute("y1", "0");
+          patternLine.setAttribute("x2", "0");
+          patternLine.setAttribute("y2", "10");
+          patternLine.setAttribute("stroke", "#374151");
+          patternLine.setAttribute("stroke-width", "2");
+          patternLine.setAttribute("opacity", "0.3");
+          pattern.appendChild(patternLine);
+          defs.appendChild(pattern);
+          svg.appendChild(defs);
+
+          const gridG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          const blockG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          svg.appendChild(gridG);
+          svg.appendChild(blockG);
+          gridWrapper.appendChild(svg);
+          page.appendChild(gridWrapper);
+          printview.appendChild(page);
+
+          // 5. Draw Content
+          // Set fixed widths to prevent flex/browser resizing differences
+          headerRow.style.width = '100%';
+
+          // Populate headers
+          const numDays = data.days;
+          for (let i = 0; i < numDays; i++) {
+            const div = document.createElement('div');
+            div.className = 'day-header';
+            div.style.flex = '1';
+            div.textContent = data.dayLabels[i] || `Day ${i + 1}`;
+            headerRow.appendChild(div);
+          }
+
+          drawGrid(virtualWidth, svg, gridG);
+
+          const filterFunc = (blockId) => {
+            if (mode === "" || mode === "color-coded") return true;
+            return data.resources[mode].links.some(l => l.block === blockId && l.type === 'MUST');
+          };
+
+          renderBlocksTo(blockG, virtualWidth, filterFunc, false);
+        });
       }
 
       function renderStagedBlocks(stagedSlots) {
@@ -3203,6 +3462,9 @@
         if (document.getElementById('settingSnapIntervalInput')) {
           document.getElementById('settingSnapIntervalInput').value = data.snapInterval;
         }
+        if (document.getElementById('settingPrintColorModeInput')) {
+          document.getElementById('settingPrintColorModeInput').value = data.printColorMode || 'color';
+        }
 
         if (dayLabelsTableBody) {
           dayLabelsTableBody.innerHTML = '';
@@ -3276,6 +3538,11 @@
         if (val > 60) val = 60;
         e.target.value = val;
         setSnapInterval(val);
+        refreshVisibleViews();
+      });
+
+      document.getElementById('settingPrintColorModeInput').addEventListener('change', (e) => {
+        data.printColorMode = e.target.value;
         refreshVisibleViews();
       });
 
@@ -3445,7 +3712,8 @@
         blocks: blockEditorDiv,
         resources: resourceEditorDiv,
         linker: linkerDiv,
-        settings: settingsEditorDiv
+        settings: settingsEditorDiv,
+        print: printview
       };
 
       const viewBtns = {
@@ -3454,7 +3722,8 @@
         blocks: document.getElementById('viewBlocksBtn'),
         resources: document.getElementById('viewResourcesBtn'),
         linker: document.getElementById('viewLinkerBtn'),
-        settings: document.getElementById('viewSettingsBtn')
+        settings: document.getElementById('viewSettingsBtn'),
+        print: document.getElementById('viewPrintBtn')
       };
 
       const scheduleTools = document.getElementById('schedulewindowtools');
@@ -3487,6 +3756,9 @@
             requestAnimationFrame(() => {
               renderAvailability();
             });
+          }
+          if (viewName === 'print') {
+            updatePrintView();
           }
         }
 
