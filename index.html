@@ -341,6 +341,61 @@
         font-size: 11px;
         font-weight: 500;
       }
+
+      /* Staging Area Styles */
+      #stagingArea {
+        height: 80px;
+        flex-shrink: 0;
+        background-color: #f3f4f6;
+        border-bottom: 2px solid #e5e7eb;
+        padding: 8px 12px;
+        overflow-x: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      
+      .staging-container {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: nowrap;
+      }
+
+      .staged-block {
+        flex-shrink: 0;
+        padding: 6px 10px;
+        background-color: #60a5fa;
+        color: white;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: grab;
+        border: 1px solid #2563eb;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 100px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      
+      .staged-block:hover {
+        background-color: #3b82f6;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .staged-block:active {
+        cursor: grabbing;
+      }
+
+      .staged-block .time-label {
+        font-size: 10px;
+        opacity: 0.9;
+        font-weight: normal;
+      }
     </style>
   </head>
   <body>
@@ -398,6 +453,30 @@
                <input type="number" id="settingDaysInput" class="editor-input" min="1" max="7" value="1">
              </td>
           </tr>
+          <tr>
+             <td>Start of Day (Hour)</td>
+             <td>
+               <input type="number" id="settingStartHourInput" class="editor-input" min="0" max="23" value="8">
+             </td>
+          </tr>
+          <tr>
+             <td>End of Day (Hour)</td>
+             <td>
+               <input type="number" id="settingEndHourInput" class="editor-input" min="1" max="24" value="17">
+             </td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <table class="editor-table" style="max-width: 500px; margin-top: 20px;">
+        <thead>
+          <tr>
+            <th style="width: 250px;">Day</th>
+            <th>Custom Label</th>
+          </tr>
+        </thead>
+        <tbody id="dayLabelsTableBody">
+          <!-- Dynamically populated -->
         </tbody>
       </table>
     </div>
@@ -413,6 +492,7 @@
              <th>Name</th>
              <th style="width: 120px;">Group (Section)</th>
              <th style="width: 120px;">Duration (min)</th>
+             <th style="width: 80px;">Color</th>
              <th style="width: 100px;">Occurrences</th>
              <th style="width: 100px;">Actions</th>
            </tr>
@@ -443,6 +523,10 @@
     </div>
     
     <div id="scheduler">
+      <div id="stagingArea">
+        <div style="font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Staged Blocks (Outside Day Range)</div>
+        <div id="stagingBlocksGrid" class="staging-container"></div>
+      </div>
       <!-- Main Scheduler View -->
       <div id="scheduleContainer" style="flex-grow: 1; overflow: auto; position: relative; width: 100%; height: 100%;">
         <svg id="scheduleSvg" xmlns="http://www.w3.org/2000/svg">
@@ -480,6 +564,9 @@
       // Stores the overall state of the scheduler.
       let data = {
         days: 1,
+        dayLabels: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
+        startHour: 8,
+        endHour: 17,
         blocks: {},
         resources: {},
       };
@@ -589,14 +676,38 @@
         };
       }
 
+      function getNextBlockId() {
+        const ids = Object.keys(data.blocks).map(id => parseInt(id));
+        if (ids.length === 0) return 1;
+        return Math.max(...ids) + 1;
+      }
+
+      function getNextResourceId() {
+        const ids = Object.keys(data.resources).map(id => parseInt(id));
+        if (ids.length === 0) return 1;
+        return Math.max(...ids) + 1;
+      }
+
       function addBlock() {
         recordStateForUndo();
         const id = getNextBlockId();
         data.blocks[id] = {
-          name: `Block ${id}`,
-          sectionGroup: "", // New property for resection tool
-          duration: 3600,
-          slots: [{ day: 0, time: 0, locked: false }]
+          name: "New Block",
+          group: "",
+          duration: 60 * 60,
+          slots: [],
+          color: "#60a5fa"
+        };
+        return id;
+      }
+
+      function addResource() {
+        recordStateForUndo();
+        const id = getNextResourceId();
+        data.resources[id] = {
+          name: "New Person",
+          type: "",
+          links: []
         };
         return id;
       }
@@ -759,6 +870,60 @@
           });
         });
         notifyAllListeners();
+      }
+
+      function setStartHour(hour) {
+        if (hour < 0 || hour >= data.endHour) return;
+        if (data.startHour === hour) return;
+        recordStateForUndo();
+        data.startHour = hour;
+        notifyAllListeners();
+      }
+
+      function setEndHour(hour) {
+        if (hour <= data.startHour || hour > 24) return;
+        if (data.endHour === hour) return;
+        recordStateForUndo();
+        data.endHour = hour;
+        notifyAllListeners();
+      }
+
+      function setDayLabel(index, label) {
+        if (index < 0 || index >= 7) return;
+        if (data.dayLabels[index] === label) return;
+        recordStateForUndo();
+        data.dayLabels[index] = label;
+        notifyAllListeners();
+      }
+
+      function setBlockColor(id, color) {
+        const block = data.blocks[id];
+        if (!block) return;
+        if (block.color === color) return;
+        recordStateForUndo();
+        block.color = color;
+        notifyBlockListeners(id);
+        
+        // Refresh highlight if mode is color-coded
+        if (highlightSelect.value === 'color-coded') {
+            applyHighlight();
+        }
+      }
+
+      function darkenColor(hex, percent) {
+          try {
+              let r = parseInt(hex.slice(1, 3), 16);
+              let g = parseInt(hex.slice(3, 5), 16);
+              let b = parseInt(hex.slice(5, 7), 16);
+
+              r = Math.floor(r * (1 - percent));
+              g = Math.floor(g * (1 - percent));
+              b = Math.floor(b * (1 - percent));
+
+              return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+          } catch (e) {
+              return "#2563eb"; // Fallback blue
+          }
       }
 
       function getConflicts() {
@@ -1368,7 +1533,6 @@
         
         // --- Process Blocks ---
         const oldBlocks = loadedData.blocks || {};
-        // Sort keys based on block name
         const sortedBlockKeys = Object.keys(oldBlocks).sort((a, b) => {
              const nameA = oldBlocks[a].name || "";
              const nameB = oldBlocks[b].name || "";
@@ -1381,43 +1545,34 @@
 
         sortedBlockKeys.forEach(oldKey => {
             const newId = nextBlockId++;
-            // Note: simple assignment preserves custom properties like sectionGroup
-            newBlocks[newId] = oldBlocks[oldKey];
+            const b = oldBlocks[oldKey];
+            newBlocks[newId] = {
+                ...b,
+                color: b.color || "#60a5fa"
+            };
             blockIdMap[oldKey] = newId; 
         });
 
         // --- Process Resources ---
-        const oldResources = loadedData.resources || {};
-        // Sort keys based on resource name
-        const sortedResourceKeys = Object.keys(oldResources).sort((a, b) => {
-             const nameA = oldResources[a].name || "";
-             const nameB = oldResources[b].name || "";
-             return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
-        });
-
         const newResources = {};
-        let nextResourceId = 1;
-
-        sortedResourceKeys.forEach(oldKey => {
-            const newId = nextResourceId++;
-            const resource = oldResources[oldKey];
-            
-            // Update links within this resource to point to new block IDs
+        Object.entries(loadedData.resources || {}).forEach(([id, r]) => {
+            newResources[id] = JSON.parse(JSON.stringify(r));
+            const resource = newResources[id];
             if (resource.links && Array.isArray(resource.links)) {
                 resource.links.forEach(link => {
-                    // Check if we have a mapping for this block
                     if (link.block !== undefined && blockIdMap[link.block] !== undefined) {
                         link.block = blockIdMap[link.block];
                     }
                 });
             }
-            
-            newResources[newId] = resource;
         });
 
         // 3. Set Data
         data = {
             days: loadedData.days || 1,
+            dayLabels: loadedData.dayLabels || ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
+            startHour: loadedData.startHour !== undefined ? loadedData.startHour : 8,
+            endHour: loadedData.endHour !== undefined ? loadedData.endHour : 17,
             blocks: newBlocks,
             resources: newResources
         };
@@ -1454,6 +1609,9 @@
         const blockTableBody = document.getElementById('blockTableBody');
 
         const settingDaysInput = document.getElementById('settingDaysInput');
+        const settingStartHourInput = document.getElementById('settingStartHourInput');
+        const settingEndHourInput = document.getElementById('settingEndHourInput');
+        const dayLabelsTableBody = document.getElementById('dayLabelsTableBody');
 
         const linkerTable = document.getElementById('linkerTable');
         
@@ -1479,6 +1637,7 @@
         const gridGroup = document.getElementById('gridGroup');
         const blocksGroup = document.getElementById('blocksGroup');
         const conflictsGroup = document.getElementById('conflictsGroup');
+        const stagingBlocksGrid = document.getElementById('stagingBlocksGrid');
 
         // Availability SVG Elements
         const availabilityContainer = document.getElementById('availabilityContainer');
@@ -1610,6 +1769,20 @@
           });
           durTd.appendChild(durInput);
           tr.appendChild(durTd);
+
+            // Color
+            const tdColor = document.createElement('td');
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.className = 'editor-input';
+            colorInput.style.padding = '2px';
+            colorInput.style.height = '30px';
+            colorInput.value = block.color || "#60a5fa";
+            colorInput.addEventListener('change', (e) => {
+                setBlockColor(id, e.target.value);
+            });
+            tdColor.appendChild(colorInput);
+            tr.appendChild(tdColor);
 
           // Occurrences Cell
           const occTd = document.createElement('td');
@@ -1803,15 +1976,18 @@
 
         // --- Shared Grid Logic ---
         const PIXELS_PER_HOUR = 60; // 1 min = 1 px
-        const TOTAL_HEIGHT = 24 * PIXELS_PER_HOUR; // 1440px
+        function getVisibleHeight() {
+            return (data.endHour - data.startHour) * PIXELS_PER_HOUR;
+        }
 
         function drawGrid(containerWidth, targetSvg, targetGroup) {
             targetGroup.innerHTML = '';
             
             if (containerWidth === 0) return;
 
+            const visibleHeight = getVisibleHeight();
             targetSvg.setAttribute('width', containerWidth);
-            targetSvg.setAttribute('height', TOTAL_HEIGHT);
+            targetSvg.setAttribute('height', visibleHeight);
             
             const numDays = data.days;
             const dayWidth = containerWidth / numDays;
@@ -1828,7 +2004,7 @@
                 text.setAttribute('font-weight', 'bold');
                 text.setAttribute('fill', '#f3f4f6');
                 text.style.pointerEvents = 'none';
-                text.textContent = `Day ${i + 1}`;
+                text.textContent = data.dayLabels[i] || `Day ${i + 1}`;
                 targetGroup.appendChild(text);
             }
             
@@ -1839,15 +2015,15 @@
                 line.setAttribute('x1', x);
                 line.setAttribute('y1', 0);
                 line.setAttribute('x2', x);
-                line.setAttribute('y2', TOTAL_HEIGHT);
+                line.setAttribute('y2', visibleHeight);
                 line.setAttribute('stroke', '#e5e7eb');
                 line.setAttribute('stroke-width', '1');
                 targetGroup.appendChild(line);
             }
 
             // Draw Time Rows
-            for (let h = 0; h <= 24; h++) {
-                const y = h * PIXELS_PER_HOUR;
+            for (let h = data.startHour; h <= data.endHour; h++) {
+                const y = (h - data.startHour) * PIXELS_PER_HOUR;
                 
                 const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 line.setAttribute('x1', 0);
@@ -1871,7 +2047,7 @@
                 text.textContent = `${h}:00`;
                 targetGroup.appendChild(text);
 
-                if (h < 24) {
+                if (h < data.endHour) {
                     for (let m = 10; m < 60; m += 10) {
                           const ym = y + (m / 60) * PIXELS_PER_HOUR;
                           const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -2048,14 +2224,12 @@
             // 4. Calculate visual coords of dragged element
             const width = scheduleContainer.clientWidth;
             const dayWidth = width / data.days;
-            const totalSeconds = 24 * 60 * 60;
-            const TOTAL_HEIGHT = 24 * 60;
             
             const draggedRect = draggedElement.querySelector('rect');
             const draggedH = parseFloat(draggedRect.getAttribute('height'));
             
             const cxA = (newDay * dayWidth) + (dayWidth / 2); // Center of day column
-            const cyA = (newTime / totalSeconds) * TOTAL_HEIGHT + (draggedH / 2);
+            const cyA = (newTime - data.startHour * 3600) / 60 + (draggedH / 2);
 
             // 5. Draw grouped conflicts
             Object.values(groupedConflicts).forEach(group => {
@@ -2125,28 +2299,43 @@
 
             const numDays = data.days;
             const dayWidth = width / numDays;
-            const totalSeconds = 24 * 60 * 60;
+            
+            const startLimit = data.startHour * 3600;
+            const endLimit = data.endHour * 3600;
 
             // 1. Flatten all slots into a list with metadata
-            let allSlots = [];
+            let visibleSlots = [];
+            let stagedSlots = [];
             Object.entries(data.blocks).forEach(([id, block]) => { // Use entries to get ID
                 block.slots.forEach((slot, index) => {
                     if (slot.day < numDays) {
-                        allSlots.push({
+                        const slotEnd = slot.time + block.duration;
+                        const isStaged = (slotEnd <= startLimit) || (slot.time >= endLimit);
+                        
+                        const slotData = {
                             ...slot,
                             duration: block.duration,
                             name: block.name,
                             blockId: parseInt(id),
                             originalIndex: index // Capture index for drag logic
-                        });
+                        };
+                        
+                        if (isStaged) {
+                            stagedSlots.push(slotData);
+                        } else {
+                            visibleSlots.push(slotData);
+                        }
                     }
                 });
             });
 
+            // Render staged blocks
+            renderStagedBlocks(stagedSlots);
+
             // 2. Process each day
             for (let d = 0; d < numDays; d++) {
                 // Get slots for this day
-                let daySlots = allSlots.filter(s => s.day === d);
+                let daySlots = visibleSlots.filter(s => s.day === d);
                 
                 // Sort by start time, then duration (desc) to place larger items first
                 daySlots.sort((a, b) => {
@@ -2205,8 +2394,8 @@
                     
                     cluster.forEach(slot => {
                         const colX = (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
-                        const y = (slot.time / totalSeconds) * TOTAL_HEIGHT;
-                        const h = (slot.duration / totalSeconds) * TOTAL_HEIGHT;
+                        const y = (slot.time - data.startHour * 3600) / 60;
+                        const h = (slot.duration / 60);
                         
                         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                         g.setAttribute("class", "schedule-block " + (slot.locked ? "locked" : ""));
@@ -2226,8 +2415,8 @@
                         rect.setAttribute('height', h);
                         rect.setAttribute('rx', 4);
                         rect.setAttribute('ry', 4);
-                        rect.setAttribute('fill', '#60a5fa');
-                        rect.setAttribute('stroke', '#2563eb');
+                        rect.setAttribute('fill', data.blocks[slot.blockId].color || '#60a5fa');
+                        rect.setAttribute('stroke', darkenColor(data.blocks[slot.blockId].color || '#60a5fa', 0.2));
                         rect.setAttribute('stroke-width', 1);
                         rect.setAttribute('opacity', 0.9);
                         g.appendChild(rect);
@@ -2267,26 +2456,52 @@
             applyHighlight();
         }
 
+        function renderStagedBlocks(stagedSlots) {
+            stagingBlocksGrid.innerHTML = '';
+            
+            // Sort staged blocks by day then time
+            stagedSlots.sort((a, b) => (a.day - b.day) || (a.time - b.time));
+            
+            if (stagedSlots.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.fontSize = '11px';
+                empty.style.color = '#9ca3af';
+                empty.style.padding = '10px 0';
+                empty.textContent = 'No blocks outside visible range.';
+                stagingBlocksGrid.appendChild(empty);
+                return;
+            }
+
+            stagedSlots.forEach(slot => {
+                const card = document.createElement('div');
+                card.className = 'staged-block';
+                card.dataset.blockId = slot.blockId;
+                
+                const hour = Math.floor(slot.time / 3600);
+                const min = Math.floor((slot.time % 3600) / 60);
+                const timeStr = `${hour}:${min.toString().padStart(2, '0')}`;
+                
+                const dayLabel = data.dayLabels[slot.day] || `Day ${slot.day + 1}`;
+                card.innerHTML = `
+                    <div>${slot.name}</div>
+                    <div class="time-label">${dayLabel}, ${timeStr}</div>
+                `;
+                
+                card.addEventListener('mousedown', (e) => {
+                    handleStagedDragStart(e, slot, card);
+                });
+                
+                stagingBlocksGrid.appendChild(card);
+            });
+        }
+
         // --- Availability View Logic ---
 
         function getScheduleBounds() {
-            let start = 86400; // Init max
-            let end = 0;       // Init min
-            let hasBlocks = false;
-
-            Object.values(data.blocks).forEach(block => {
-                block.slots.forEach(slot => {
-                    hasBlocks = true;
-                    if (slot.time < start) start = slot.time;
-                    if (slot.time + block.duration > end) end = slot.time + block.duration;
-                });
-            });
-
-            if (!hasBlocks) {
-                // Default to 8am - 4pm if no blocks
-                return { start: 8 * 3600, end: 16 * 3600 };
-            }
-            return { start, end };
+            return {
+                start: data.startHour * 3600,
+                end: data.endHour * 3600
+            };
         }
 
         function updateAvailabilityFilterOptions() {
@@ -2325,7 +2540,6 @@
 
             const numDays = data.days;
             const dayWidth = width / numDays;
-            const totalSeconds = 24 * 60 * 60;
             const bounds = getScheduleBounds();
             
             const filterType = document.getElementById('availabilityFilter').value;
@@ -2407,8 +2621,8 @@
                     // 4. Draw block if resources are free
                     if (freeResources.length > 0) {
                         const colX = d * dayWidth;
-                        const y = (t1 / totalSeconds) * TOTAL_HEIGHT;
-                        const h = (duration / totalSeconds) * TOTAL_HEIGHT;
+                        const y = (t1 - data.startHour * 3600) / 60;
+                        const h = (duration / 60);
 
                         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                         g.setAttribute("class", "availability-block");
@@ -2514,6 +2728,73 @@
             }
         }
 
+        function handleStagedDragStart(e, slot, card) {
+            e.preventDefault();
+            
+            // 1. Create a "ghost" SVG element in the grid
+            // We temporarily render it at its scheduled (out of range) position
+            const width = scheduleContainer.clientWidth;
+            const dayWidth = width / data.days;
+            const y = (slot.time - data.startHour * 3600) / 60;
+            const h = (slot.duration / 60);
+            
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("class", "schedule-block dragging");
+            g.setAttribute("data-block-id", slot.blockId);
+            g.setAttribute("data-slot-index", slot.originalIndex);
+            
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            // Position it centrally in the day column
+            rect.setAttribute('x', (slot.day * dayWidth) + 4);
+            rect.setAttribute('y', y);
+            rect.setAttribute('width', dayWidth - 8);
+            rect.setAttribute('height', h);
+            rect.setAttribute('rx', 4);
+            rect.setAttribute('ry', 4);
+            rect.setAttribute('fill', '#60a5fa');
+            rect.setAttribute('stroke', '#2563eb');
+            rect.setAttribute('stroke-width', 1);
+            rect.setAttribute('opacity', 0.8);
+            g.appendChild(rect);
+            
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute('x', (slot.day * dayWidth) + 8);
+            text.setAttribute('y', y + 16);
+            text.setAttribute('font-size', '12');
+            text.setAttribute('fill', 'white');
+            text.textContent = slot.name;
+            g.appendChild(text);
+            
+            blocksGroup.appendChild(g);
+            
+            // 2. Hide common conflicts
+            conflictsGroup.innerHTML = '';
+
+            // 3. Initialize Drag State
+            // OffsetY is tricky here because we clicked an HTML card.
+            // Let's assume the user grabbed the middle of the card.
+            const cardRect = card.getBoundingClientRect();
+            const offsetY = e.clientY - cardRect.top;
+
+            dragState = {
+                originDay: slot.day,
+                originTime: slot.time,
+                draggedItems: [{
+                    blockId: slot.blockId,
+                    slotIndex: slot.originalIndex,
+                    element: g,
+                    startTransform: ''
+                }],
+                startX: e.clientX,
+                startY: e.clientY,
+                isLocked: false,
+                offsetY: offsetY // Use local card offset for relative drag feel
+            };
+            
+            // Hide the card
+            card.style.opacity = '0.5';
+        }
+
         window.addEventListener('mousemove', (e) => {
             if (!dragState) return;
             e.preventDefault();
@@ -2534,23 +2815,20 @@
             if (newDay >= data.days) newDay = data.days - 1;
 
             // 2. Calculate New Time based on Cursor Y (minus offset)
-            const TOTAL_HEIGHT = 24 * 60; // 1440 px
-            const totalSeconds = 86400;
-            
-            // Mouse Y in container coordinates (accounting for scroll)
             const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
-            
-            // Target Y for the top of the block
             const targetPixelY = currentMouseY - dragState.offsetY;
             
-            // Convert to seconds
-            let rawTime = (targetPixelY / TOTAL_HEIGHT) * totalSeconds;
+            // Convert to seconds: (Pixels * 60 seconds/pixel) + Start Hour Offset
+            let rawTime = (targetPixelY * 60) + (data.startHour * 3600);
             
             // Snap to 10 minutes (600 seconds)
             let newTime = Math.round(rawTime / 600) * 600;
             
             // Clamp Time (using the first block in the group as reference)
             const firstBlock = getBlock(dragState.draggedItems[0].blockId);
+            
+            // --- REMOVED CLAMPING TO VISIBLE RANGE ---
+            // Allow moving blocks out of range to "stage" them
             if (newTime < 0) newTime = 0;
             if (newTime + firstBlock.duration > 86400) newTime = 86400 - firstBlock.duration;
 
@@ -2562,7 +2840,7 @@
                 const rectWidth = parseFloat(rect.getAttribute('width'));
 
                 const targetX = (newDay * dayWidth) + (dayWidth - rectWidth) / 2;
-                const targetY = (newTime / totalSeconds) * TOTAL_HEIGHT;
+                const targetY = (newTime - data.startHour * 3600) / 60;
                 
                 const translateX = targetX - originalRectX;
                 const translateY = targetY - originalRectY;
@@ -2593,19 +2871,16 @@
             if (newDay >= data.days) newDay = data.days - 1;
             
             // 2. New Time
-            const TOTAL_HEIGHT = 24 * 60; 
-            const totalSeconds = 86400;
             const currentMouseY = e.clientY - containerRect.top + container.scrollTop;
             const targetPixelY = currentMouseY - dragState.offsetY;
-            let rawTime = (targetPixelY / TOTAL_HEIGHT) * totalSeconds;
+            let rawTime = (targetPixelY * 60) + (data.startHour * 3600);
             let newTime = Math.round(rawTime / 600) * 600;
             
+            // 24h Clamping
             const firstBlock = getBlock(dragState.draggedItems[0].blockId);
-            
-            // Clamp Time
             if (newTime < 0) newTime = 0;
             if (newTime + firstBlock.duration > 86400) newTime = 86400 - firstBlock.duration;
-
+            
             // Clean up visual state
             if (!dragState.isLocked) {
                 dragState.draggedItems.forEach(item => {
@@ -2684,6 +2959,37 @@
            if (settingDaysInput) {
                settingDaysInput.value = data.days;
            }
+           if (settingStartHourInput) {
+               settingStartHourInput.value = data.startHour;
+           }
+           if (settingEndHourInput) {
+               settingEndHourInput.value = data.endHour;
+           }
+           
+           if (dayLabelsTableBody) {
+               dayLabelsTableBody.innerHTML = '';
+               for (let i = 0; i < data.days; i++) {
+                   const tr = document.createElement('tr');
+                   
+                   const tdLabel = document.createElement('td');
+                   tdLabel.textContent = `Day ${i + 1}`;
+                   
+                   const tdInput = document.createElement('td');
+                   const input = document.createElement('input');
+                   input.type = 'text';
+                   input.className = 'editor-input';
+                   input.value = data.dayLabels[i] || `Day ${i + 1}`;
+                   input.addEventListener('change', (e) => {
+                       setDayLabel(i, e.target.value);
+                       refreshVisibleViews();
+                   });
+                   
+                   tdInput.appendChild(input);
+                   tr.appendChild(tdLabel);
+                   tr.appendChild(tdInput);
+                   dayLabelsTableBody.appendChild(tr);
+               }
+           }
         }
 
         settingDaysInput.addEventListener('change', (e) => {
@@ -2696,6 +3002,28 @@
             
             setNumberOfDays(val);
             // Refresh grid if visible
+            refreshVisibleViews();
+        });
+
+        settingStartHourInput.addEventListener('change', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val) || val < 0) val = 0;
+            if (val >= data.endHour) val = data.endHour - 1;
+            e.target.value = val;
+            setStartHour(val);
+            refreshVisibleViews();
+        });
+
+        settingEndHourInput.addEventListener('change', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val) || val <= data.startHour) val = data.startHour + 1;
+            if (val > 24) val = 24;
+            e.target.value = val;
+            setEndHour(val);
+            refreshVisibleViews();
+        });
+
+        function refreshVisibleViews() {
             if (document.getElementById('scheduler').style.display !== 'none') {
                 renderGrid();
                 renderBlocks();
@@ -2703,7 +3031,7 @@
             if (document.getElementById('availability').style.display !== 'none') {
                 renderAvailability();
             }
-        });
+        }
 
         // Initialize Settings
         updateSettingsView();
@@ -2733,7 +3061,7 @@
         function updateHighlightDropdown() {
             const currentVal = highlightSelect.value;
             // Clear current options except first
-            highlightSelect.innerHTML = '<option value="">None</option>';
+            highlightSelect.innerHTML = '<option value="">None</option><option value="color-coded">Color-Coded</option>';
             
             const sortedKeys = Object.keys(data.resources).sort((a,b) => {
                return data.resources[a].name.localeCompare(data.resources[b].name, undefined, { numeric: true }); 
@@ -2753,16 +3081,43 @@
         }
         
         function applyHighlight() {
-            const resId = highlightSelect.value;
+            const mode = highlightSelect.value;
             
-            // 1. Remove highlight from all
-            document.querySelectorAll('.schedule-block.highlight-target').forEach(el => {
+            // 1. Remove highlight classes and Reset base colors
+            document.querySelectorAll('.schedule-block').forEach(el => {
                 el.classList.remove('highlight-target');
+                const rect = el.querySelector('rect');
+                if (rect) {
+                    const blockId = el.dataset.blockId;
+                    const block = data.blocks[blockId];
+                    if (mode === 'color-coded' && block && block.color) {
+                        rect.setAttribute('fill', block.color);
+                        rect.setAttribute('stroke', darkenColor(block.color, 0.2));
+                    } else {
+                        rect.setAttribute('fill', '#60a5fa');
+                        rect.setAttribute('stroke', '#2563eb');
+                    }
+                }
             });
             
+            // Update staging blocks too
+            document.querySelectorAll('.staged-block').forEach(el => {
+                const blockId = el.dataset.blockId;
+                const block = data.blocks[blockId];
+                if (mode === 'color-coded' && block && block.color) {
+                    el.style.backgroundColor = block.color;
+                    el.style.borderColor = darkenColor(block.color, 0.3);
+                } else {
+                    el.style.backgroundColor = '#60a5fa';
+                    el.style.borderColor = '#2563eb';
+                }
+            });
+
+            if (mode === 'color-coded') return; // Handled above for all
+
             // 2. Add highlight if resource selected
-            if (resId && data.resources[resId]) {
-                const res = data.resources[resId];
+            if (mode && data.resources[mode]) {
+                const res = data.resources[mode];
                 res.links.forEach(l => {
                     if (l.type === 'MUST') {
                         document.querySelectorAll(`.schedule-block[data-block-id="${l.block}"]`).forEach(el => {
