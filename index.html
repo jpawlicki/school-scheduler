@@ -869,7 +869,6 @@
       blocks: {},
       resources: {},
       views: {},
-      currentViewId: 'all',
       printColorMode: 'color',
       timeFormat: '24h',
       printSubtitle: ''
@@ -1195,9 +1194,7 @@
       if (!data.views[id]) return;
       recordStateForUndo();
       delete data.views[id];
-      if (data.currentViewId === String(id)) {
-        data.currentViewId = 'all';
-      }
+      // DOM will be updated by updateViewSelectDropdown
       notifyViewListeners(id);
     }
 
@@ -1983,8 +1980,7 @@
         printColorMode: loadedData.printColorMode || 'color',
         blocks: newBlocks,
         resources: newResources,
-        views: newViews,
-        currentViewId: loadedData.currentViewId || 'all'
+        views: newViews
       };
       window.data = data;
 
@@ -2613,7 +2609,7 @@
               } else {
                 td.classList.remove('linked-active');
               }
-              if (data.currentViewId === String(viewId)) {
+              if (viewSelect.value === String(viewId)) {
                 renderBlocks(); // Refresh scheduler if current view changed
               }
             });
@@ -2634,16 +2630,14 @@
           option.textContent = view.name;
           viewSelect.appendChild(option);
         });
-        if (data.views[currentVal] || currentVal === 'all') {
+        if (data.views[currentVal]) {
           viewSelect.value = currentVal;
         } else {
           viewSelect.value = 'all';
-          data.currentViewId = 'all';
         }
       }
 
       viewSelect.addEventListener('change', (e) => {
-        data.currentViewId = e.target.value;
         renderBlocks();
       });
 
@@ -3018,8 +3012,9 @@
       function renderBlocks() {
         const width = scheduleContainer.clientWidth;
         let filterFunc = null;
-        if (data.currentViewId && data.currentViewId !== 'all') {
-          const view = data.views[data.currentViewId];
+        const currentViewId = viewSelect.value;
+        if (currentViewId && currentViewId !== 'all') {
+          const view = data.views[currentViewId];
           if (view) {
             filterFunc = (blockId) => view.blockIds.includes(blockId);
           }
