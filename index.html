@@ -2118,6 +2118,7 @@
         nameInput.addEventListener('change', (e) => {
           renameResource(id, e.target.value);
           updateHighlightDropdown(); // Update dropdown on rename
+          updateViewSelectDropdown();
         });
         nameTd.appendChild(nameInput);
         tr.appendChild(nameTd);
@@ -2171,6 +2172,7 @@
         deleteBtn.addEventListener('click', () => {
           deleteResource(id);
           updateHighlightDropdown(); // Update dropdown on delete
+          updateViewSelectDropdown();
         });
         actionsTd.appendChild(deleteBtn);
         tr.appendChild(actionsTd);
@@ -2624,13 +2626,35 @@
       function updateViewSelectDropdown() {
         const currentVal = viewSelect.value;
         viewSelect.innerHTML = '<option value="all">All</option>';
+        
+        // Named Views
         Object.entries(data.views).forEach(([id, view]) => {
           const option = document.createElement('option');
           option.value = id;
           option.textContent = view.name;
           viewSelect.appendChild(option);
         });
-        if (data.views[currentVal]) {
+
+        // Resource Views
+        const sortedResKeys = Object.keys(data.resources).sort((a, b) => {
+          return data.resources[a].name.localeCompare(data.resources[b].name, undefined, { numeric: true });
+        });
+
+        if (sortedResKeys.length > 0) {
+          const separator = document.createElement('option');
+          separator.disabled = true;
+          separator.textContent = "─── People ───";
+          viewSelect.appendChild(separator);
+
+          sortedResKeys.forEach(id => {
+            const option = document.createElement('option');
+            option.value = 'res_' + id;
+            option.textContent = data.resources[id].name;
+            viewSelect.appendChild(option);
+          });
+        }
+
+        if (currentVal === 'all' || data.views[currentVal] || (currentVal.startsWith('res_') && data.resources[currentVal.substring(4)])) {
           viewSelect.value = currentVal;
         } else {
           viewSelect.value = 'all';
@@ -3014,9 +3038,18 @@
         let filterFunc = null;
         const currentViewId = viewSelect.value;
         if (currentViewId && currentViewId !== 'all') {
-          const view = data.views[currentViewId];
-          if (view) {
-            filterFunc = (blockId) => view.blockIds.includes(blockId);
+          if (currentViewId.startsWith('res_')) {
+            const resId = currentViewId.substring(4);
+            const res = data.resources[resId];
+            if (res) {
+              const linkedBlockIds = new Set(res.links.filter(l => l.type === 'MUST').map(l => l.block));
+              filterFunc = (blockId) => linkedBlockIds.has(blockId);
+            }
+          } else {
+            const view = data.views[currentViewId];
+            if (view) {
+              filterFunc = (blockId) => view.blockIds.includes(blockId);
+            }
           }
         }
         renderBlocksTo(blocksGroup, width, filterFunc, true);
@@ -4082,6 +4115,7 @@
         // If we are in Linker view (rare due to button location, but for consistency), refresh it
         if (linkerDiv.style.display !== 'none') renderLinker();
         updateHighlightDropdown();
+        updateViewSelectDropdown();
       });
 
       addBlockBtn.addEventListener('click', () => {
@@ -4117,6 +4151,7 @@
         if (viewsEditorDiv.style?.display !== 'none') renderViews();
         if (availabilityDiv.style?.display !== 'none') renderAvailability();
         updateHighlightDropdown(); // Ensure dropdown is updated on load/undo
+        updateViewSelectDropdown();
       };
 
       // --- View Switching Logic ---
