@@ -623,6 +623,11 @@
     .bw-block text {
       fill: black !important;
     }
+
+    /* Low Color Mode Classes */
+    .low-color-block rect {
+      fill: white !important;
+    }
   </style>
 </head>
 
@@ -723,6 +728,7 @@
             <select id="settingPrintColorModeInput" class="editor-input">
               <option value="color">Color</option>
               <option value="bw">Black & White</option>
+              <option value="low-color">Low Color</option>
             </select>
           </td>
         </tr>
@@ -739,6 +745,12 @@
           <td>Print Subtitle</td>
           <td>
             <input type="text" id="settingPrintSubtitleInput" class="editor-input" placeholder="e.g., 2026-2027 School Year">
+          </td>
+        </tr>
+        <tr>
+          <td>Print Times in Block</td>
+          <td>
+            <input type="checkbox" id="settingPrintTimesInBlockInput" style="width: auto; margin-top: 6px;">
           </td>
         </tr>
       </tbody>
@@ -871,7 +883,8 @@
       views: {},
       printColorMode: 'color',
       timeFormat: '24h',
-      printSubtitle: ''
+      printSubtitle: '',
+      printTimesInBlock: false
     };
 
     // For debugging purposes.
@@ -1978,6 +1991,9 @@
         pixelsPerMinute: loadedData.pixelsPerMinute || 1,
         snapInterval: loadedData.snapInterval || 10,
         printColorMode: loadedData.printColorMode || 'color',
+        timeFormat: loadedData.timeFormat || '24h',
+        printSubtitle: loadedData.printSubtitle || '',
+        printTimesInBlock: loadedData.printTimesInBlock || false,
         blocks: newBlocks,
         resources: newResources,
         views: newViews
@@ -3162,6 +3178,8 @@
               const currentMode = colorModeOverride || data.printColorMode;
               if (currentMode === 'bw') {
                 g.classList.add('bw-block');
+              } else if (currentMode === 'low-color') {
+                g.classList.add('low-color-block');
               }
 
               if (isInteractive) {
@@ -3212,8 +3230,10 @@
 
               // Text color: Contrast-aware in color-coded mode, otherwise White
               let textColor = 'white';
-              if (highlightSelect.value === 'color-coded' || (colorModeOverride && colorModeOverride !== 'bw')) {
+              if (highlightSelect.value === 'color-coded' || (colorModeOverride && colorModeOverride !== 'bw' && colorModeOverride !== 'low-color')) {
                 textColor = getContrastColor(blockColor);
+              } else if (currentMode === 'low-color') {
+                textColor = darkenColor(blockColor, 0.2);
               }
               text.setAttribute('fill', textColor);
               text.style.pointerEvents = 'none';
@@ -3237,7 +3257,26 @@
                 const maxChars = Math.floor(availWidth / charWidth);
                 displayText = title.substring(0, Math.max(0, maxChars));
               }
-              text.textContent = displayText;
+              
+              if (!isInteractive && data.printTimesInBlock && h >= 25) {
+                text.setAttribute('y', y + (h / 2) - (fontSize / 2));
+                
+                const tspan1 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                tspan1.setAttribute('x', text.getAttribute('x'));
+                tspan1.textContent = displayText;
+                text.appendChild(tspan1);
+                
+                const tspan2 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                tspan2.setAttribute('x', text.getAttribute('x'));
+                tspan2.setAttribute('dy', fontSize + 2);
+                tspan2.setAttribute('font-size', Math.max(7, fontSize - 2));
+                tspan2.setAttribute('font-weight', 'normal');
+                tspan2.textContent = timeLabelStr;
+                text.appendChild(tspan2);
+              } else {
+                text.textContent = displayText;
+              }
+              
               g.appendChild(text);
               targetGroup.appendChild(g);
             });
@@ -3886,6 +3925,9 @@
         if (document.getElementById('settingPrintSubtitleInput')) {
           document.getElementById('settingPrintSubtitleInput').value = data.printSubtitle || '';
         }
+        if (document.getElementById('settingPrintTimesInBlockInput')) {
+          document.getElementById('settingPrintTimesInBlockInput').checked = data.printTimesInBlock || false;
+        }
 
         if (dayLabelsTableBody) {
           dayLabelsTableBody.innerHTML = '';
@@ -3977,6 +4019,10 @@
         data.printSubtitle = e.target.value;
       });
 
+      document.getElementById('settingPrintTimesInBlockInput').addEventListener('change', (e) => {
+        data.printTimesInBlock = e.target.checked;
+      });
+
       function refreshVisibleViews() {
         if (document.getElementById('scheduler').style.display !== 'none') {
           renderGrid();
@@ -4036,47 +4082,71 @@
 
       function applyHighlight() {
         const mode = highlightSelect.value;
+        const colorMode = data.printColorMode;
 
         // 1. Remove highlight classes and Reset base colors
         document.querySelectorAll('.schedule-block').forEach(el => {
           el.classList.remove('highlight-target');
+          
+          const blockId = el.dataset.blockId;
+          const block = data.blocks[blockId];
+          const activeColor = (mode === 'color-coded' && block && block.color) ? block.color : '#60a5fa';
+
           const rect = el.querySelector('rect');
           if (rect) {
-            const blockId = el.dataset.blockId;
-            const block = data.blocks[blockId];
-            if (mode === 'color-coded' && block && block.color) {
-              rect.setAttribute('fill', block.color);
-              rect.setAttribute('stroke', darkenColor(block.color, 0.2));
+            if (colorMode === 'bw') {
+               rect.setAttribute('fill', 'white');
+               rect.setAttribute('stroke', 'grey');
+            } else if (colorMode === 'low-color') {
+               rect.setAttribute('fill', 'white');
+               rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
             } else {
-              rect.setAttribute('fill', '#60a5fa');
-              rect.setAttribute('stroke', '#2563eb');
+               rect.setAttribute('fill', activeColor);
+               rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
             }
           }
 
           const text = el.querySelector('text');
           if (text) {
-            const blockId = el.dataset.blockId;
-            const block = data.blocks[blockId];
-            if (mode === 'color-coded' && block && block.color) {
-              text.setAttribute('fill', getContrastColor(block.color));
+            if (colorMode === 'bw') {
+               text.setAttribute('fill', 'black');
+            } else if (colorMode === 'low-color') {
+               text.setAttribute('fill', darkenColor(activeColor, 0.2));
             } else {
-              text.setAttribute('fill', 'white');
+               text.setAttribute('fill', getContrastColor(activeColor));
             }
           }
+          
+          // Also handle tspans for multi-line text
+          el.querySelectorAll('tspan').forEach(tspan => {
+            if (colorMode === 'bw') {
+               tspan.setAttribute('fill', 'black');
+            } else if (colorMode === 'low-color') {
+               tspan.setAttribute('fill', darkenColor(activeColor, 0.2));
+            } else {
+               tspan.setAttribute('fill', getContrastColor(activeColor));
+            }
+          });
         });
 
         // Update staging blocks too
         document.querySelectorAll('.staged-block').forEach(el => {
           const blockId = el.dataset.blockId;
           const block = data.blocks[blockId];
-          if (mode === 'color-coded' && block && block.color) {
-            el.style.backgroundColor = block.color;
-            el.style.borderColor = darkenColor(block.color, 0.3);
-            el.style.color = getContrastColor(block.color);
+          const activeColor = (mode === 'color-coded' && block && block.color) ? block.color : '#60a5fa';
+          
+          if (colorMode === 'bw') {
+            el.style.backgroundColor = 'white';
+            el.style.borderColor = 'grey';
+            el.style.color = 'black';
+          } else if (colorMode === 'low-color') {
+            el.style.backgroundColor = 'white';
+            el.style.borderColor = darkenColor(activeColor, 0.2);
+            el.style.color = darkenColor(activeColor, 0.2);
           } else {
-            el.style.backgroundColor = '#60a5fa';
-            el.style.borderColor = '#2563eb';
-            el.style.color = 'white';
+            el.style.backgroundColor = activeColor;
+            el.style.borderColor = darkenColor(activeColor, 0.3);
+            el.style.color = getContrastColor(activeColor);
           }
         });
 
