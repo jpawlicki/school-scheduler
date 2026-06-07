@@ -3292,11 +3292,11 @@
 
               // Determine extra lines for print view
               let peopleList = '';
-              if (!isInteractive && data.printPeopleTypesInBlock && data.printPeopleTypesInBlock.trim() !== '') {
-                const searchType = data.printPeopleTypesInBlock.trim().toLowerCase();
+              if (data.printPeopleTypesInBlock && data.printPeopleTypesInBlock.trim() !== '') {
+                const searchTypes = data.printPeopleTypesInBlock.split(',').map(t => t.trim().toLowerCase()).filter(t => t !== '');
                 const names = [];
                 Object.values(data.resources).forEach(res => {
-                  if (res.type && res.type.trim().toLowerCase() === searchType) {
+                  if (res.type && searchTypes.includes(res.type.trim().toLowerCase())) {
                     if (res.links.some(l => l.block === slot.blockId && l.type === 'MUST')) {
                       names.push(res.name);
                     }
@@ -3308,7 +3308,7 @@
               }
 
               const showTimes = !isInteractive && data.printTimesInBlock;
-              const showPeople = !isInteractive && peopleList !== '';
+              const showPeople = peopleList !== '';
               
               if ((showTimes || showPeople) && h >= 25) {
                 const lineCount = 1 + (showPeople ? 1 : 0) + (showTimes ? 1 : 0);
