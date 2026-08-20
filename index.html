@@ -531,6 +531,17 @@
         display: none !important;
       }
 
+      #printSidebar {
+        display: none !important;
+      }
+
+      #printContent {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: visible !important;
+      }
+
       #printview {
         display: block !important;
         height: auto !important;
@@ -576,10 +587,11 @@
     }
 
     #printview {
-      flex-direction: column;
-      overflow: auto;
+      flex-direction: row;
+      flex-grow: 1;
+      overflow: hidden;
       background-color: #f3f4f6;
-      padding: 20px;
+      padding: 0;
     }
 
     .print-page {
@@ -723,40 +735,12 @@
           </td>
         </tr>
         <tr>
-          <td>Print Color Mode</td>
-          <td>
-            <select id="settingPrintColorModeInput" class="editor-input">
-              <option value="color">Color</option>
-              <option value="bw">Black & White</option>
-              <option value="low-color">Low Color</option>
-            </select>
-          </td>
-        </tr>
-        <tr>
           <td>Time Format</td>
           <td>
             <select id="settingTimeFormatInput" class="editor-input">
               <option value="24h">24 Hour</option>
               <option value="12h">12 Hour (AM/PM)</option>
             </select>
-          </td>
-        </tr>
-        <tr>
-          <td>Print Subtitle</td>
-          <td>
-            <input type="text" id="settingPrintSubtitleInput" class="editor-input" placeholder="e.g., 2026-2027 School Year">
-          </td>
-        </tr>
-        <tr>
-          <td>Print Times in Block</td>
-          <td>
-            <input type="checkbox" id="settingPrintTimesInBlockInput" style="width: auto; margin-top: 6px;">
-          </td>
-        </tr>
-        <tr>
-          <td>Print People Types in Block</td>
-          <td>
-            <input type="text" id="settingPrintPeopleTypesInBlockInput" class="editor-input" placeholder="e.g., Teacher, Student">
           </td>
         </tr>
       </tbody>
@@ -854,7 +838,71 @@
     </div>
   </div>
 
-  <div id="printview" style="display:none;"></div>
+  <div id="printview" style="display:none; flex-direction: row; height: 100%; overflow: hidden;">
+    <div id="printSidebar" style="width: 300px; background-color: white; border-right: 1px solid #e5e7eb; padding: 20px; overflow-y: auto; flex-shrink: 0;">
+      <h3 style="margin-top: 0;">Print Settings</h3>
+      
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Page Size</label>
+        <div style="display: flex; gap: 5px; align-items: center;">
+          <input type="text" id="settingPrintPageWidthInput" class="editor-input" value="210mm" style="width: 80px;" placeholder="Width">
+          <span style="font-size: 12px; color: #6b7280;">x</span>
+          <input type="text" id="settingPrintPageHeightInput" class="editor-input" value="297mm" style="width: 80px;" placeholder="Height">
+        </div>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Print Color Mode</label>
+        <select id="settingPrintColorModeInput" class="editor-input">
+          <option value="color">Color</option>
+          <option value="bw">Black & White</option>
+          <option value="low-color">Low Color</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Print Subtitle</label>
+        <input type="text" id="settingPrintSubtitleInput" class="editor-input" placeholder="e.g., 2026-2027 School Year">
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Print Times in Block</label>
+        <input type="checkbox" id="settingPrintTimesInBlockInput" style="width: auto;">
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Print People Types in Block</label>
+        <input type="text" id="settingPrintPeopleTypesInBlockInput" class="editor-input" placeholder="e.g., Teacher, Student">
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Font Size: <span id="printFontSizeDisplay">11</span></label>
+        <input type="range" id="settingPrintFontSizeInput" min="8" max="18" value="11" style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Show Time Bar</label>
+        <input type="checkbox" id="settingPrintShowTimeBarInput" style="width: auto;" checked>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Visible Days</label>
+        <div id="printVisibleDaysCheckboxes" style="display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto;"></div>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Pages to Print</label>
+        <div style="margin-bottom: 5px; display: flex; align-items: center;">
+          <input type="checkbox" id="printSelectAllPages" checked style="margin-right: 5px;">
+          <label for="printSelectAllPages" style="font-size: 14px;">Toggle All</label>
+        </div>
+        <div id="printPageCheckboxes" style="max-height: 200px; overflow-y: auto; border: 1px solid #d1d5db; padding: 5px; border-radius: 4px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+    <div id="printContent" style="flex-grow: 1; overflow: auto; background-color: #f3f4f6; padding: 20px;"></div>
+  </div>
 
   <div id="linker" style="display:none;">
     <div id="linkerScroll" style="overflow: auto; max-height: 100%; max-width: 100%;">
@@ -2747,12 +2795,16 @@
         return (data.endHour - data.startHour) * 60 * data.pixelsPerMinute;
       }
 
-      function drawGrid(containerWidth, targetSvg, targetGroup) {
+      function drawGrid(containerWidth, targetSvg, targetGroup, isPrint = false) {
         targetGroup.innerHTML = '';
 
         if (containerWidth === 0) return;
 
-        const TIME_LABEL_WIDTH = 40;
+        let TIME_LABEL_WIDTH = 40;
+        if (isPrint) {
+          const tbInput = document.getElementById('settingPrintShowTimeBarInput');
+          if (tbInput && !tbInput.checked) TIME_LABEL_WIDTH = 0;
+        }
         const visibleHeight = getVisibleHeight();
         // Only set width/height attributes if not already handling via viewBox in print
         if (!targetSvg.hasAttribute('viewBox')) {
@@ -2761,7 +2813,14 @@
         }
 
         const numDays = data.days;
-        const dayWidth = (containerWidth - TIME_LABEL_WIDTH) / numDays;
+        let visibleDays = [];
+        if (!data.printHiddenDays) data.printHiddenDays = [];
+        for (let d = 0; d < numDays; d++) {
+          if (isPrint && data.printHiddenDays.includes(d)) continue;
+          visibleDays.push(d);
+        }
+        const activeDaysCount = visibleDays.length || 1;
+        const dayWidth = (containerWidth - TIME_LABEL_WIDTH) / activeDaysCount;
 
         // Draw Time Column Background Spacer
         const timeRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -2774,7 +2833,7 @@
         targetGroup.appendChild(timeRect);
 
         // Draw Day Columns
-        for (let i = 1; i <= numDays; i++) {
+        for (let i = 1; i <= activeDaysCount; i++) {
           const x = TIME_LABEL_WIDTH + (i - 1) * dayWidth;
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
           line.setAttribute('x1', x);
@@ -2799,18 +2858,20 @@
           line.setAttribute('stroke-width', '1');
           targetGroup.appendChild(line);
 
-          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          text.setAttribute('x', 5);
-          text.setAttribute('y', y);
-          text.setAttribute('dominant-baseline', 'middle');
-          text.setAttribute('font-size', '11');
-          text.setAttribute('font-weight', '500');
-          text.setAttribute('fill', '#6b7280');
-          text.setAttribute('stroke', 'white');
-          text.setAttribute('stroke-width', '3');
-          text.setAttribute('paint-order', 'stroke');
-          text.textContent = formatTime(h);
-          targetGroup.appendChild(text);
+          if (TIME_LABEL_WIDTH > 0) {
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute('x', 5);
+            text.setAttribute('y', y);
+            text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('font-size', '11');
+            text.setAttribute('font-weight', '500');
+            text.setAttribute('fill', '#6b7280');
+            text.setAttribute('stroke', 'white');
+            text.setAttribute('stroke-width', '3');
+            text.setAttribute('paint-order', 'stroke');
+            text.textContent = formatTime(h);
+            targetGroup.appendChild(text);
+          }
 
           if (h < data.endHour) {
             for (let m = data.snapInterval; m < 60; m += data.snapInterval) {
@@ -3108,8 +3169,19 @@
         if (width === 0) return;
 
         const numDays = data.days;
-        const TIME_LABEL_WIDTH = 40;
-        const dayWidth = (width - TIME_LABEL_WIDTH) / numDays;
+        let TIME_LABEL_WIDTH = 40;
+        if (!isInteractive) {
+          const tbInput = document.getElementById('settingPrintShowTimeBarInput');
+          if (tbInput && !tbInput.checked) TIME_LABEL_WIDTH = 0;
+        }
+        let visibleDays = [];
+        if (!data.printHiddenDays) data.printHiddenDays = [];
+        for (let d = 0; d < numDays; d++) {
+          if (!isInteractive && data.printHiddenDays.includes(d)) continue;
+          visibleDays.push(d);
+        }
+        const activeDaysCount = visibleDays.length || 1;
+        const dayWidth = (width - TIME_LABEL_WIDTH) / activeDaysCount;
 
         const startLimit = data.startHour * 3600;
         const endLimit = data.endHour * 3600;
@@ -3149,8 +3221,54 @@
           renderStagedBlocks(stagedSlots);
         }
 
+        const escapeHTML = (str) => {
+          return String(str).replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+          }[tag]));
+        };
+
+        const printTimes = !isInteractive && data.printTimesInBlock;
+        let printPeople = false;
+        let peopleListByBlockId = {};
+
+        if (!isInteractive && data.printPeopleTypesInBlock && data.printPeopleTypesInBlock.trim() !== '') {
+          const searchTypes = data.printPeopleTypesInBlock.split(',').map(t => t.trim().toLowerCase()).filter(t => t !== '');
+          if (searchTypes.length > 0) {
+            printPeople = true;
+            Object.values(data.resources).forEach(res => {
+              if (res.type && searchTypes.includes(res.type.trim().toLowerCase())) {
+                res.links.forEach(l => {
+                  if (l.type === 'MUST') {
+                    if (!peopleListByBlockId[l.block]) peopleListByBlockId[l.block] = [];
+                    peopleListByBlockId[l.block].push(res.name);
+                  }
+                });
+              }
+            });
+            for (let bId in peopleListByBlockId) {
+               peopleListByBlockId[bId] = peopleListByBlockId[bId].join(', ');
+            }
+          }
+        }
+
+        let baseFontSize = 11;
+        let baseFontSizeSmall = 9;
+        if (!isInteractive) {
+           const pFsInput = document.getElementById('settingPrintFontSizeInput');
+           if (pFsInput) {
+             const val = parseInt(pFsInput.value, 10);
+             if (!isNaN(val)) {
+                baseFontSize = val;
+                baseFontSizeSmall = val - 2;
+             }
+           }
+        }
+        
+        let svgHTML = "";
+
         // 2. Process each day
-        for (let d = 0; d < numDays; d++) {
+        for (let visibleIdx = 0; visibleIdx < visibleDays.length; visibleIdx++) {
+          let d = visibleDays[visibleIdx];
           let daySlots = visibleSlots.filter(s => s.day === d);
           daySlots.sort((a, b) => {
             if (a.time !== b.time) return a.time - b.time;
@@ -3199,169 +3317,100 @@
 
             const numCols = columns.length;
             cluster.forEach(slot => {
-              const colX = TIME_LABEL_WIDTH + (d * dayWidth) + (slot.colIndex * (dayWidth / numCols));
+              const colX = TIME_LABEL_WIDTH + (visibleIdx * dayWidth) + (slot.colIndex * (dayWidth / numCols));
               const y = ((slot.time - data.startHour * 3600) / 60) * data.pixelsPerMinute;
               const h = (slot.duration / 60) * data.pixelsPerMinute;
-
-              const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-              g.setAttribute("class", "schedule-block " + (slot.locked ? "locked" : ""));
-
-              // Apply B&W logic
-              const currentMode = colorModeOverride || data.printColorMode;
-              if (currentMode === 'bw') {
-                g.classList.add('bw-block');
-              } else if (currentMode === 'low-color') {
-                g.classList.add('low-color-block');
-              }
-
-              if (isInteractive) {
-                g.setAttribute("data-block-id", slot.blockId);
-                g.setAttribute("data-slot-index", slot.originalIndex);
-                g.addEventListener('mousedown', (e) => {
-                  handleDragStart(e, slot.blockId, slot.originalIndex, slot.day, slot.time, slot.locked, g);
-                });
-              }
-
-              const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-              rect.setAttribute('x', colX + 2);
-              rect.setAttribute('y', y);
-              rect.setAttribute('width', (dayWidth / numCols) - 4);
-              rect.setAttribute('height', h);
-              rect.setAttribute('rx', 4);
-              rect.setAttribute('ry', 4);
-
+              
               const blockColor = data.blocks[slot.blockId].color || '#60a5fa';
-              rect.setAttribute('fill', blockColor);
-              rect.setAttribute('stroke', darkenColor(blockColor, 0.2));
-              rect.setAttribute('stroke-width', 1);
-              rect.setAttribute('opacity', 0.9);
-              g.appendChild(rect);
+              const isLockedClass = slot.locked ? "locked" : "";
+              const currentMode = colorModeOverride || data.printColorMode;
+              let modeClass = "";
+              if (currentMode === 'bw') modeClass = 'bw-block';
+              else if (currentMode === 'low-color') modeClass = 'low-color-block';
 
-              // Don't show lock icons in print (Interactive only)
+              let gAttrs = `class="schedule-block ${isLockedClass} ${modeClass}"`;
+              if (isInteractive) {
+                 gAttrs += ` data-block-id="${slot.blockId}" data-slot-index="${slot.originalIndex}" data-day="${slot.day}" data-time="${slot.time}"`;
+              }
+              
+              svgHTML += `<g ${gAttrs}>`;
+
+              const rectWidth = (dayWidth / numCols) - 4;
+              const strokeColor = darkenColor(blockColor, 0.2);
+              svgHTML += `<rect x="${colX + 2}" y="${y}" width="${rectWidth}" height="${h}" rx="4" ry="4" fill="${blockColor}" stroke="${strokeColor}" stroke-width="1" opacity="0.9"></rect>`;
+
               if (slot.locked && isInteractive) {
-                const patternRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                patternRect.setAttribute('x', colX + 2);
-                patternRect.setAttribute('y', y);
-                patternRect.setAttribute('width', (dayWidth / numCols) - 4);
-                patternRect.setAttribute('height', h);
-                patternRect.setAttribute('rx', 4);
-                patternRect.setAttribute('ry', 4);
-                patternRect.setAttribute('fill', 'url(#stripedPattern)');
-                patternRect.setAttribute('pointer-events', 'none');
-                g.appendChild(patternRect);
+                svgHTML += `<rect x="${colX + 2}" y="${y}" width="${rectWidth}" height="${h}" rx="4" ry="4" fill="url(#stripedPattern)" pointer-events="none"></rect>`;
               }
 
-              const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-              text.setAttribute('x', colX + (dayWidth / numCols) / 2);
-              text.setAttribute('y', y + (h / 2));
-              text.setAttribute('text-anchor', 'middle');
-              text.setAttribute('dominant-baseline', 'middle');
-              const fontSize = h < 20 ? 9 : 11;
-              text.setAttribute('font-size', fontSize);
-              text.setAttribute('font-weight', '600');
+              let fontSize = h < 20 ? 9 : 11;
+              if (!isInteractive) {
+                 fontSize = baseFontSize;
+                 if (h < 20) fontSize = baseFontSizeSmall;
+              }
 
-              // Text color: Contrast-aware in color-coded mode, otherwise White
               let textColor = 'white';
               if (highlightSelect.value === 'color-coded' || (colorModeOverride && colorModeOverride !== 'bw' && colorModeOverride !== 'low-color')) {
                 textColor = getContrastColor(blockColor);
               } else if (currentMode === 'low-color') {
                 textColor = darkenColor(blockColor, 0.2);
               }
-              text.setAttribute('fill', textColor);
-              text.style.pointerEvents = 'none';
 
               const title = slot.name;
-              const availWidth = (dayWidth / numCols) - 8;
+              const availWidth = rectWidth - 4;
               let displayText = title;
-
-              // Tooltip with formatted time
+              
               const t1 = slot.time / 3600;
               const t2 = (slot.time + slot.duration) / 3600;
               const timeLabelStr = `${formatTime(t1)} - ${formatTime(t2)}`;
+              
+              svgHTML += `<title>${escapeHTML(title)} (${escapeHTML(timeLabelStr)})</title>`;
 
-              const titleEl = document.createElementNS("http://www.w3.org/2000/svg", "title");
-              titleEl.textContent = `${title} (${timeLabelStr})`;
-              g.appendChild(titleEl);
-
-              // Progressive truncation (no ellipsis)
-              const charWidth = fontSize * 0.55; // Estimated average char width
+              const charWidth = fontSize * 0.55;
               if (title.length * charWidth > availWidth) {
                 const maxChars = Math.floor(availWidth / charWidth);
                 displayText = title.substring(0, Math.max(0, maxChars));
               }
 
-              // Determine extra lines for print view
-              let peopleList = '';
-              if (data.printPeopleTypesInBlock && data.printPeopleTypesInBlock.trim() !== '') {
-                const searchTypes = data.printPeopleTypesInBlock.split(',').map(t => t.trim().toLowerCase()).filter(t => t !== '');
-                const names = [];
-                Object.values(data.resources).forEach(res => {
-                  if (res.type && searchTypes.includes(res.type.trim().toLowerCase())) {
-                    if (res.links.some(l => l.block === slot.blockId && l.type === 'MUST')) {
-                      names.push(res.name);
-                    }
-                  }
-                });
-                if (names.length > 0) {
-                  peopleList = names.join(', ');
-                }
-              }
-
-              const showTimes = !isInteractive && data.printTimesInBlock;
+              let peopleList = printPeople ? (peopleListByBlockId[slot.blockId] || '') : '';
               const showPeople = peopleList !== '';
               
-              if ((showTimes || showPeople) && h >= 25) {
-                const lineCount = 1 + (showPeople ? 1 : 0) + (showTimes ? 1 : 0);
+              const textX = colX + (dayWidth / numCols) / 2;
+              let textY = y + (h / 2);
+
+              if ((printTimes || showPeople) && h >= 25) {
+                const lineCount = 1 + (showPeople ? 1 : 0) + (printTimes ? 1 : 0);
                 const lineSpacing = fontSize + 2;
                 const totalTextHeight = lineCount * lineSpacing;
+                textY = y + (h / 2) - (totalTextHeight / 2) + (fontSize / 2);
                 
-                // Adjust starting Y to center the group of lines
-                text.setAttribute('y', y + (h / 2) - (totalTextHeight / 2) + (fontSize / 2));
+                svgHTML += `<text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">`;
+                svgHTML += `<tspan x="${textX}">${escapeHTML(displayText)}</tspan>`;
                 
-                // 1. Block Name
-                const tspanName = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
-                tspanName.setAttribute('x', text.getAttribute('x'));
-                tspanName.textContent = displayText;
-                text.appendChild(tspanName);
-                
-                // 2. People List
                 if (showPeople) {
-                  const tspanPeople = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
-                  tspanPeople.setAttribute('x', text.getAttribute('x'));
-                  tspanPeople.setAttribute('dy', lineSpacing);
-                  tspanPeople.setAttribute('font-size', Math.max(7, fontSize - 2));
-                  tspanPeople.setAttribute('font-weight', 'normal');
-                  
-                  // Truncate people list if too long
                   let pText = peopleList;
-                  const pCharWidth = (fontSize - 2) * 0.55;
+                  const pCharWidth = Math.max(7, fontSize - 2) * 0.55;
                   if (pText.length * pCharWidth > availWidth) {
                     const maxPChars = Math.floor(availWidth / pCharWidth);
                     pText = pText.substring(0, Math.max(0, maxPChars));
                   }
-                  tspanPeople.textContent = pText;
-                  text.appendChild(tspanPeople);
+                  svgHTML += `<tspan x="${textX}" dy="${lineSpacing}" font-size="${Math.max(7, fontSize - 2)}" font-weight="normal">${escapeHTML(pText)}</tspan>`;
                 }
                 
-                // 3. Time Label
-                if (showTimes) {
-                  const tspanTime = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
-                  tspanTime.setAttribute('x', text.getAttribute('x'));
-                  tspanTime.setAttribute('dy', lineSpacing);
-                  tspanTime.setAttribute('font-size', Math.max(7, fontSize - 2));
-                  tspanTime.setAttribute('font-weight', 'normal');
-                  tspanTime.textContent = timeLabelStr;
-                  text.appendChild(tspanTime);
+                if (printTimes) {
+                  svgHTML += `<tspan x="${textX}" dy="${lineSpacing}" font-size="${Math.max(7, fontSize - 2)}" font-weight="normal">${escapeHTML(timeLabelStr)}</tspan>`;
                 }
+                svgHTML += `</text>`;
               } else {
-                text.textContent = displayText;
+                svgHTML += `<text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">${escapeHTML(displayText)}</text>`;
               }
               
-              g.appendChild(text);
-              targetGroup.appendChild(g);
+              svgHTML += `</g>`;
             });
           });
         }
+        
+        targetGroup.innerHTML = svgHTML;
 
         if (isInteractive) {
           renderConflicts();
@@ -3369,40 +3418,138 @@
         }
       }
 
+      let printPageSelection = {};
+      window._currentPrintPages = [];
+
       function updatePrintView() {
-        printview.innerHTML = '';
+        const checkboxesContainer = document.getElementById('printPageCheckboxes');
+        if (checkboxesContainer) checkboxesContainer.innerHTML = '';
 
-        // 1. Get all highlight options
-        updateHighlightDropdown(); // Ensure it's up to date
+        const daysCheckboxesContainer = document.getElementById('printVisibleDaysCheckboxes');
+        if (daysCheckboxesContainer) {
+          daysCheckboxesContainer.innerHTML = '';
+          if (!data.printHiddenDays) data.printHiddenDays = [];
+          for (let i = 0; i < data.days; i++) {
+             const wrapper = document.createElement('div');
+             wrapper.style.display = 'flex';
+             wrapper.style.alignItems = 'center';
+             wrapper.style.marginBottom = '2px';
+             
+             const cb = document.createElement('input');
+             cb.type = 'checkbox';
+             cb.id = `print_day_cb_${i}`;
+             cb.checked = !data.printHiddenDays.includes(i);
+             cb.style.marginRight = '5px';
+             
+             cb.addEventListener('change', (e) => {
+                if (!e.target.checked) {
+                   if (!data.printHiddenDays.includes(i)) data.printHiddenDays.push(i);
+                } else {
+                   data.printHiddenDays = data.printHiddenDays.filter(d => d !== i);
+                }
+                dataModified();
+                updatePrintView();
+             });
+             
+             const label = document.createElement('label');
+             label.htmlFor = `print_day_cb_${i}`;
+             label.textContent = data.dayLabels[i] || `Day ${i + 1}`;
+             label.style.fontSize = '12px';
+             
+             wrapper.appendChild(cb);
+             wrapper.appendChild(label);
+             daysCheckboxesContainer.appendChild(wrapper);
+          }
+        }
+
+        // 1. Collect all pages
+        const pages = [];
+
+        updateHighlightDropdown();
         const highlightOptions = Array.from(highlightSelect.options);
-
         highlightOptions.forEach(opt => {
           const mode = opt.value;
           const label = opt.textContent;
           const titleText = label === "None" ? "Full Schedule" : `Schedule: ${label}`;
-
           const filterFunc = (blockId) => {
             if (mode === "" || mode === "color-coded") return true;
             return data.resources[mode].links.some(l => l.block === blockId && l.type === 'MUST');
           };
-
-          createPrintPage(titleText, filterFunc);
+          pages.push({ titleText, filterFunc });
         });
 
-        // 2. Get all named views
         const sortedViewKeys = Object.keys(data.views).sort((a, b) => {
           return data.views[a].name.localeCompare(data.views[b].name, undefined, { numeric: true });
         });
-
         sortedViewKeys.forEach(id => {
           const view = data.views[id];
           const titleText = `View: ${view.name}`;
           const filterFunc = (blockId) => {
             return view.blockIds.includes(blockId);
           };
-
-          createPrintPage(titleText, filterFunc);
+          pages.push({ titleText, filterFunc });
         });
+
+        window._currentPrintPages = pages;
+
+        // 2. Render checkboxes
+        pages.forEach((pageDef, index) => {
+          if (printPageSelection[pageDef.titleText] === undefined) {
+             printPageSelection[pageDef.titleText] = true;
+          }
+          
+          const wrapper = document.createElement('div');
+          wrapper.style.display = 'flex';
+          wrapper.style.alignItems = 'center';
+          wrapper.style.marginBottom = '2px';
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.id = `print_cb_${index}`;
+          cb.checked = printPageSelection[pageDef.titleText];
+          cb.style.marginRight = '5px';
+          
+          cb.addEventListener('change', (e) => {
+             printPageSelection[pageDef.titleText] = e.target.checked;
+             updatePrintPagesVisibility(pages);
+          });
+
+          const label = document.createElement('label');
+          label.htmlFor = `print_cb_${index}`;
+          label.textContent = pageDef.titleText;
+          label.style.fontSize = '12px';
+
+          wrapper.appendChild(cb);
+          wrapper.appendChild(label);
+          if (checkboxesContainer) checkboxesContainer.appendChild(wrapper);
+        });
+
+        const toggleAllCb = document.getElementById('printSelectAllPages');
+        if (toggleAllCb) {
+          // ensure we only bind once or just bind directly
+          toggleAllCb.onchange = (e) => {
+            const checked = e.target.checked;
+            pages.forEach((pageDef, index) => {
+               printPageSelection[pageDef.titleText] = checked;
+               const cb = document.getElementById(`print_cb_${index}`);
+               if (cb) cb.checked = checked;
+            });
+            updatePrintPagesVisibility(pages);
+          };
+        }
+
+        updatePrintPagesVisibility(pages);
+      }
+
+      function updatePrintPagesVisibility(pages) {
+         const printContent = document.getElementById('printContent');
+         if (!printContent) return;
+         printContent.innerHTML = '';
+         pages.forEach(pageDef => {
+            if (printPageSelection[pageDef.titleText]) {
+               createPrintPage(pageDef.titleText, pageDef.filterFunc);
+            }
+         });
       }
 
       function createPrintPage(titleText, filterFunc) {
@@ -3469,19 +3616,27 @@
         svg.appendChild(blockG);
         gridWrapper.appendChild(svg);
         page.appendChild(gridWrapper);
-        printview.appendChild(page);
+        document.getElementById('printContent').appendChild(page);
 
         // 4. Draw Content
         headerRow.style.width = '100%';
 
         const numDays = data.days;
-        const TIME_LABEL_WIDTH = 40;
-        const spacer = document.createElement('div');
-        spacer.className = 'time-axis-spacer';
-        spacer.style.width = (TIME_LABEL_WIDTH / virtualWidth * 100) + '%';
-        headerRow.appendChild(spacer);
+        let TIME_LABEL_WIDTH = 40;
+        const tbInput = document.getElementById('settingPrintShowTimeBarInput');
+        if (tbInput && !tbInput.checked) {
+          TIME_LABEL_WIDTH = 0;
+        }
+
+        if (TIME_LABEL_WIDTH > 0) {
+          const spacer = document.createElement('div');
+          spacer.className = 'time-axis-spacer';
+          spacer.style.width = (TIME_LABEL_WIDTH / virtualWidth * 100) + '%';
+          headerRow.appendChild(spacer);
+        }
 
         for (let i = 0; i < numDays; i++) {
+          if (data.printHiddenDays && data.printHiddenDays.includes(i)) continue;
           const div = document.createElement('div');
           div.className = 'day-header';
           div.style.flex = '1';
@@ -3489,7 +3644,7 @@
           headerRow.appendChild(div);
         }
 
-        drawGrid(virtualWidth, svg, gridG);
+        drawGrid(virtualWidth, svg, gridG, true);
         renderBlocksTo(blockG, virtualWidth, filterFunc, false);
       }
 
@@ -3701,6 +3856,24 @@
       // --- Drag and Drop Logic ---
 
       let dragState = null;
+
+      blocksGroup.addEventListener('mousedown', (e) => {
+        // Find closest parent group with schedule-block class
+        let group = e.target;
+        while (group && group !== blocksGroup) {
+          if (group.classList && group.classList.contains('schedule-block')) break;
+          group = group.parentNode;
+        }
+        if (!group || group === blocksGroup) return;
+
+        const blockId = parseInt(group.getAttribute('data-block-id'), 10);
+        const slotIndex = parseInt(group.getAttribute('data-slot-index'), 10);
+        const day = parseInt(group.getAttribute('data-day'), 10);
+        const time = parseInt(group.getAttribute('data-time'), 10);
+        const isLocked = group.classList.contains('locked');
+
+        handleDragStart(e, blockId, slotIndex, day, time, isLocked, group);
+      });
 
       function handleDragStart(e, blockId, slotIndex, startDay, startTime, isLocked, element) {
         e.preventDefault(); // Prevent text selection/native drag
@@ -4026,6 +4199,13 @@
         if (document.getElementById('settingPrintPeopleTypesInBlockInput')) {
           document.getElementById('settingPrintPeopleTypesInBlockInput').value = data.printPeopleTypesInBlock || '';
         }
+        if (document.getElementById('settingPrintPageWidthInput')) {
+          document.getElementById('settingPrintPageWidthInput').value = data.printPageWidth || '210mm';
+        }
+        if (document.getElementById('settingPrintPageHeightInput')) {
+          document.getElementById('settingPrintPageHeightInput').value = data.printPageHeight || '297mm';
+        }
+        if (typeof updatePrintPageSize === 'function') updatePrintPageSize();
 
         if (dayLabelsTableBody) {
           dayLabelsTableBody.innerHTML = '';
@@ -4117,18 +4297,61 @@
 
       document.getElementById('settingPrintSubtitleInput').addEventListener('input', (e) => {
         data.printSubtitle = e.target.value;
+        refreshVisibleViews();
         dataModified();
       });
 
       document.getElementById('settingPrintTimesInBlockInput').addEventListener('change', (e) => {
         data.printTimesInBlock = e.target.checked;
+        refreshVisibleViews();
         dataModified();
       });
 
       document.getElementById('settingPrintPeopleTypesInBlockInput').addEventListener('input', (e) => {
         data.printPeopleTypesInBlock = e.target.value;
+        refreshVisibleViews();
         dataModified();
       });
+
+      function updatePrintPageSize() {
+        const widthInput = document.getElementById('settingPrintPageWidthInput');
+        const heightInput = document.getElementById('settingPrintPageHeightInput');
+        if (!widthInput || !heightInput) return;
+
+        let width = widthInput.value.trim() || '210mm';
+        let height = heightInput.value.trim() || '297mm';
+        
+        data.printPageWidth = width;
+        data.printPageHeight = height;
+
+        let styleTag = document.getElementById('dynamicPrintStyle');
+        if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = 'dynamicPrintStyle';
+          document.head.appendChild(styleTag);
+        }
+        
+        styleTag.innerHTML = `
+          @page { size: ${width} ${height}; margin: 0; }
+          .print-page { width: ${width}; min-height: ${height}; }
+        `;
+        dataModified();
+      }
+
+      document.getElementById('settingPrintPageWidthInput').addEventListener('change', updatePrintPageSize);
+      document.getElementById('settingPrintPageHeightInput').addEventListener('change', updatePrintPageSize);
+
+      const fsInput = document.getElementById('settingPrintFontSizeInput');
+      if (fsInput) {
+        fsInput.addEventListener('input', (e) => {
+          const display = document.getElementById('printFontSizeDisplay');
+          if (display) display.textContent = e.target.value;
+        });
+        fsInput.addEventListener('change', refreshVisibleViews);
+      }
+
+      const tbInput = document.getElementById('settingPrintShowTimeBarInput');
+      if (tbInput) tbInput.addEventListener('change', refreshVisibleViews);
 
       function refreshVisibleViews() {
         if (document.getElementById('scheduler').style.display !== 'none') {
@@ -4137,6 +4360,14 @@
         }
         if (document.getElementById('availability').style.display !== 'none') {
           renderAvailability();
+        }
+        if (document.getElementById('printview').style.display !== 'none') {
+          if (typeof updatePrintPagesVisibility === 'function') {
+            // We'll define this globally accessible array shortly
+            updatePrintPagesVisibility(window._currentPrintPages || []);
+          } else {
+            updatePrintView();
+          }
         }
       }
 
@@ -4310,11 +4541,6 @@
           const row = createBlockRow(id);
           if (row) blockTableBody.appendChild(row);
         }
-        if (linkerDiv.style?.display !== 'none') renderLinker();
-        if (viewsEditorDiv.style?.display !== 'none') renderViews();
-        if (schedulerDiv.style?.display !== 'none') renderBlocks();
-        if (availabilityDiv.style?.display !== 'none') renderAvailability();
-        updateViewSelectDropdown();
       };
 
       const onNewResource = (id) => {
@@ -4324,11 +4550,6 @@
           const row = createResourceRow(id);
           if (row) resourceTableBody.appendChild(row);
         }
-        if (linkerDiv.style.display !== 'none') renderLinker();
-        if (viewsEditorDiv.style?.display !== 'none') renderViews();
-        if (availabilityDiv.style?.display !== 'none') renderAvailability();
-        updateHighlightDropdown(); // Ensure dropdown is updated on load/undo
-        updateViewSelectDropdown();
       };
 
       // --- View Switching Logic ---
@@ -4365,7 +4586,7 @@
         // 2. Show selected view
         if (views[viewName]) {
           views[viewName].style.display = 'flex'; // Changed to Flex for scheduler
-          if (viewName !== 'scheduler' && viewName !== 'availability') {
+          if (viewName !== 'scheduler' && viewName !== 'availability' && viewName !== 'print') {
             views[viewName].style.display = 'block'; // Block for others
           }
 
@@ -4494,6 +4715,7 @@
             blockTableBody.innerHTML = '';
             loadData(loadedData, onNewBlock, onNewResource);
             updateSettingsView(); // Refresh settings UI
+            updateHighlightDropdown(); // Refresh highlight dropdown
             updateViewSelectDropdown(); // Refresh views dropdown
             if (linkerDiv.style?.display !== 'none') renderLinker();
             if (viewsEditorDiv.style?.display !== 'none') renderViews();
@@ -4519,6 +4741,7 @@
       undoBtn.addEventListener('click', () => {
         undo(onNewBlock, onNewResource);
         updateSettingsView(); // Refresh settings UI on undo
+        updateHighlightDropdown();
         updateViewSelectDropdown();
         if (linkerDiv.style.display !== 'none') renderLinker();
         if (viewsEditorDiv.style?.display !== 'none') renderViews();
@@ -4532,6 +4755,7 @@
       redoBtn.addEventListener('click', () => {
         redo(onNewBlock, onNewResource);
         updateSettingsView(); // Refresh settings UI on redo
+        updateHighlightDropdown();
         updateViewSelectDropdown();
         if (linkerDiv.style.display !== 'none') renderLinker();
         if (viewsEditorDiv.style?.display !== 'none') renderViews();
