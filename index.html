@@ -879,7 +879,7 @@
 
       <div style="margin-bottom: 15px;">
         <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Font Size: <span id="printFontSizeDisplay">11</span></label>
-        <input type="range" id="settingPrintFontSizeInput" min="8" max="18" value="11" style="width: 100%;">
+        <input type="range" id="settingPrintFontSizeInput" min="5" max="36" value="11" style="width: 100%;">
       </div>
 
       <div style="margin-bottom: 15px;">
@@ -2096,6 +2096,7 @@
         printVerticalTallBlocks: loadedData.printVerticalTallBlocks || false,
         printPageWidth: loadedData.printPageWidth || '210mm',
         printPageHeight: loadedData.printPageHeight || '297mm',
+        printFontSize: loadedData.printFontSize || 11,
         printPageSelection: loadedData.printPageSelection || {},
         blocks: newBlocks,
         resources: newResources,
@@ -2909,7 +2910,7 @@
               text.setAttribute('x', 5);
               text.setAttribute('y', y);
               text.setAttribute('dominant-baseline', 'middle');
-              text.setAttribute('font-size', '11');
+              text.setAttribute('font-size', isPrint ? (data.printFontSize || 11) : 11);
               text.setAttribute('font-weight', '500');
               text.setAttribute('fill', '#6b7280');
               text.setAttribute('stroke', 'white');
@@ -2963,7 +2964,7 @@
                 text.setAttribute('dominant-baseline', 'middle');
               }
               
-              text.setAttribute('font-size', '11');
+              text.setAttribute('font-size', isPrint ? (data.printFontSize || 11) : 11);
               text.setAttribute('font-weight', '500');
               text.setAttribute('fill', '#6b7280');
               text.setAttribute('stroke', 'white');
@@ -3339,18 +3340,8 @@
           }
         }
 
-        let baseFontSize = 11;
-        let baseFontSizeSmall = 9;
-        if (!isInteractive) {
-           const pFsInput = document.getElementById('settingPrintFontSizeInput');
-           if (pFsInput) {
-             const val = parseInt(pFsInput.value, 10);
-             if (!isNaN(val)) {
-                baseFontSize = val;
-                baseFontSizeSmall = val - 2;
-             }
-           }
-        }
+        let baseFontSize = data.printFontSize || 11;
+        let baseFontSizeSmall = baseFontSize - 2;
         
         let svgHTML = "";
 
@@ -3437,10 +3428,8 @@
                  if (h < 20) fontSize = baseFontSizeSmall;
               }
 
-              let textColor = 'white';
-              if (highlightSelect.value === 'color-coded' || (colorModeOverride && colorModeOverride !== 'bw' && colorModeOverride !== 'low-color')) {
-                textColor = getContrastColor(blockColor);
-              } else if (currentMode === 'low-color') {
+              let textColor = getContrastColor(blockColor);
+              if (currentMode === 'low-color') {
                 textColor = darkenColor(blockColor, 0.2);
               }
 
@@ -4397,6 +4386,12 @@
         if (document.getElementById('settingPrintPageHeightInput')) {
           document.getElementById('settingPrintPageHeightInput').value = data.printPageHeight || '297mm';
         }
+        if (document.getElementById('settingPrintFontSizeInput')) {
+          document.getElementById('settingPrintFontSizeInput').value = data.printFontSize || 11;
+          if (document.getElementById('printFontSizeDisplay')) {
+            document.getElementById('printFontSizeDisplay').textContent = data.printFontSize || 11;
+          }
+        }
         if (typeof updatePrintPageSize === 'function') updatePrintPageSize();
 
         if (dayLabelsTableBody) {
@@ -4566,7 +4561,11 @@
           const display = document.getElementById('printFontSizeDisplay');
           if (display) display.textContent = e.target.value;
         });
-        fsInput.addEventListener('change', refreshVisibleViews);
+        fsInput.addEventListener('change', (e) => {
+           data.printFontSize = parseInt(e.target.value, 10);
+           refreshVisibleViews();
+           dataModified();
+        });
       }
 
       const tbInput = document.getElementById('settingPrintShowTimeBarInput');
@@ -4645,7 +4644,7 @@
 
       function applyHighlight() {
         const mode = highlightSelect.value;
-        const colorMode = data.printColorMode;
+        const colorMode = 'color'; // Schedule view always uses color mode
 
         // 1. Remove highlight classes and Reset base colors
         document.querySelectorAll('.schedule-block').forEach(el => {
@@ -4657,38 +4656,18 @@
 
           const rect = el.querySelector('rect');
           if (rect) {
-            if (colorMode === 'bw') {
-               rect.setAttribute('fill', 'white');
-               rect.setAttribute('stroke', 'grey');
-            } else if (colorMode === 'low-color') {
-               rect.setAttribute('fill', 'white');
-               rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
-            } else {
-               rect.setAttribute('fill', activeColor);
-               rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
-            }
+             rect.setAttribute('fill', activeColor);
+             rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
           }
 
           const text = el.querySelector('text');
           if (text) {
-            if (colorMode === 'bw') {
-               text.setAttribute('fill', 'black');
-            } else if (colorMode === 'low-color') {
-               text.setAttribute('fill', darkenColor(activeColor, 0.2));
-            } else {
-               text.setAttribute('fill', getContrastColor(activeColor));
-            }
+             text.setAttribute('fill', getContrastColor(activeColor));
           }
           
           // Also handle tspans for multi-line text
           el.querySelectorAll('tspan').forEach(tspan => {
-            if (colorMode === 'bw') {
-               tspan.setAttribute('fill', 'black');
-            } else if (colorMode === 'low-color') {
-               tspan.setAttribute('fill', darkenColor(activeColor, 0.2));
-            } else {
-               tspan.setAttribute('fill', getContrastColor(activeColor));
-            }
+             tspan.setAttribute('fill', getContrastColor(activeColor));
           });
         });
 
@@ -4698,19 +4677,9 @@
           const block = data.blocks[blockId];
           const activeColor = (mode === 'color-coded' && block && block.color) ? block.color : '#60a5fa';
           
-          if (colorMode === 'bw') {
-            el.style.backgroundColor = 'white';
-            el.style.borderColor = 'grey';
-            el.style.color = 'black';
-          } else if (colorMode === 'low-color') {
-            el.style.backgroundColor = 'white';
-            el.style.borderColor = darkenColor(activeColor, 0.2);
-            el.style.color = darkenColor(activeColor, 0.2);
-          } else {
-            el.style.backgroundColor = activeColor;
-            el.style.borderColor = darkenColor(activeColor, 0.3);
-            el.style.color = getContrastColor(activeColor);
-          }
+          el.style.backgroundColor = activeColor;
+          el.style.borderColor = darkenColor(activeColor, 0.2);
+          el.style.color = getContrastColor(activeColor);
         });
 
         if (mode === 'color-coded') return; // Handled above for all
