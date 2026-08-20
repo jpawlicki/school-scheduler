@@ -3249,7 +3249,7 @@
             }
           }
         }
-        renderBlocksTo(blocksGroup, width, filterFunc, true);
+        renderBlocksTo(blocksGroup, width, filterFunc, true, 'color');
       }
 
       function renderBlocksTo(targetGroup, width, filterFunc = null, isInteractive = true, colorModeOverride = null) {
@@ -4660,10 +4660,9 @@
              rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
           }
 
-          const text = el.querySelector('text');
-          if (text) {
+          el.querySelectorAll('text').forEach(text => {
              text.setAttribute('fill', getContrastColor(activeColor));
-          }
+          });
           
           // Also handle tspans for multi-line text
           el.querySelectorAll('tspan').forEach(tspan => {
