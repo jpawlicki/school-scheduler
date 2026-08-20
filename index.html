@@ -391,9 +391,7 @@
     .schedule-block.highlight-target rect {
       stroke: #8b5cf6 !important;
       /* Violet-500 */
-      stroke-width: 3px !important;
-      fill: #ddd6fe !important;
-      /* Violet-200 */
+      stroke-width: 4px !important;
       filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.5));
     }
 
@@ -655,6 +653,7 @@
         Highlight:
         <select id="highlightSelect"
           style="margin-left:4px; padding:4px 8px; border-radius:6px; border:1px solid #d1d5db; font-size:14px; color:#374151; cursor:pointer; background-color:white;">
+          <option value="color-coded">Color-Coded</option>
           <option value="">None</option>
         </select>
       </span>
@@ -892,6 +891,15 @@
       </div>
 
       <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Label Position</label>
+        <select id="settingPrintLabelPositionInput" class="editor-input">
+          <option value="top">Top</option>
+          <option value="middle">Middle</option>
+          <option value="bottom">Bottom</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 15px;">
         <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Vertical Text for Tall Blocks</label>
         <input type="checkbox" id="settingPrintVerticalTallBlocksInput" style="width: auto;">
       </div>
@@ -953,6 +961,7 @@
       printTimesInBlock: false,
       printPeopleTypesInBlock: '',
       printTimeBarMode: 'hourly',
+      printLabelPosition: 'middle',
       printHiddenDays: [],
       printVerticalTallBlocks: false,
       printPageWidth: '210mm',
@@ -2092,6 +2101,7 @@
         printTimesInBlock: loadedData.printTimesInBlock || false,
         printPeopleTypesInBlock: loadedData.printPeopleTypesInBlock || '',
         printTimeBarMode: loadedData.printTimeBarMode || 'hourly',
+        printLabelPosition: loadedData.printLabelPosition || 'middle',
         printHiddenDays: loadedData.printHiddenDays || [],
         printVerticalTallBlocks: loadedData.printVerticalTallBlocks || false,
         printPageWidth: loadedData.printPageWidth || '210mm',
@@ -3460,17 +3470,33 @@
               
               const textX = colX + (dayWidth / numCols) / 2;
               const centerY = y + (h / 2);
-              let textY = centerY;
+              const canShowMultipleLines = isVertical ? (rectWidth >= 25) : (h >= 25);
+              const hasMultipleLines = showPeople && canShowMultipleLines;
+              
+              let effectiveCenterY = centerY;
+              let labelPos = data.printLabelPosition || 'middle';
+              if (isInteractive) labelPos = 'middle';
+              
+              if (!isVertical && labelPos !== 'middle') {
+                const padding = 6;
+                const totalTextHeight = hasMultipleLines ? ((fontSize + 2) * 2) : fontSize;
+                if (labelPos === 'top') {
+                  effectiveCenterY = y + padding + (totalTextHeight / 2);
+                } else if (labelPos === 'bottom') {
+                  effectiveCenterY = y + h - padding - (totalTextHeight / 2);
+                }
+                effectiveCenterY = Math.max(y + (totalTextHeight/2), Math.min(y + h - (totalTextHeight/2), effectiveCenterY));
+              }
 
               let transformAttr = isVertical ? `transform="rotate(-90, ${textX}, ${centerY})"` : '';
 
-              const canShowMultipleLines = isVertical ? (rectWidth >= 25) : (h >= 25);
+              let textY = effectiveCenterY;
 
-              if (showPeople && canShowMultipleLines) {
+              if (hasMultipleLines) {
                 const lineCount = 2;
                 const lineSpacing = fontSize + 2;
                 const totalTextHeight = lineCount * lineSpacing;
-                textY = centerY - (totalTextHeight / 2) + (fontSize / 2);
+                textY = effectiveCenterY - (totalTextHeight / 2) + (fontSize / 2);
                 
                 svgHTML += `<text x="${textX}" y="${textY}" ${transformAttr} text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">`;
                 svgHTML += `<tspan x="${textX}">${escapeHTML(displayText)}</tspan>`;
@@ -4356,6 +4382,9 @@
         if (document.getElementById('settingPrintShowTimeBarInput')) {
           document.getElementById('settingPrintShowTimeBarInput').value = data.printTimeBarMode || 'hourly';
         }
+        if (document.getElementById('settingPrintLabelPositionInput')) {
+          document.getElementById('settingPrintLabelPositionInput').value = data.printLabelPosition || 'middle';
+        }
         if (document.getElementById('settingSnapIntervalInput')) {
           document.getElementById('settingSnapIntervalInput').value = data.snapInterval;
         }
@@ -4577,6 +4606,15 @@
         });
       }
 
+      const lpInput = document.getElementById('settingPrintLabelPositionInput');
+      if (lpInput) {
+        lpInput.addEventListener('change', (e) => {
+          data.printLabelPosition = e.target.value;
+          refreshVisibleViews();
+          dataModified();
+        });
+      }
+
       function refreshVisibleViews() {
         if (document.getElementById('scheduler').style.display !== 'none') {
           renderGrid();
@@ -4623,7 +4661,7 @@
       function updateHighlightDropdown() {
         const currentVal = highlightSelect.value;
         // Clear current options except first
-        highlightSelect.innerHTML = '<option value="">None</option><option value="color-coded">Color-Coded</option>';
+        highlightSelect.innerHTML = '<option value="color-coded">Color-Coded</option><option value="">None</option>';
 
         const sortedKeys = Object.keys(data.resources).sort((a, b) => {
           return data.resources[a].name.localeCompare(data.resources[b].name, undefined, { numeric: true });
@@ -4637,22 +4675,30 @@
         });
 
         // Restore selection if it still exists
-        if (data.resources[currentVal]) {
+        if (currentVal === '' || currentVal === 'color-coded' || data.resources[currentVal]) {
           highlightSelect.value = currentVal;
         }
       }
 
       function applyHighlight() {
         const mode = highlightSelect.value;
-        const colorMode = 'color'; // Schedule view always uses color mode
+        
+        let highlightedBlocks = new Set();
+        const isHighlightMode = mode && mode !== 'color-coded';
+        
+        if (isHighlightMode && data.resources[mode]) {
+          data.resources[mode].links.forEach(l => {
+            if (l.type === 'MUST') highlightedBlocks.add(parseInt(l.block));
+          });
+        }
 
-        // 1. Remove highlight classes and Reset base colors
+        // 1. Apply colors and wash-out effects
         document.querySelectorAll('.schedule-block').forEach(el => {
           el.classList.remove('highlight-target');
           
-          const blockId = el.dataset.blockId;
+          const blockId = parseInt(el.dataset.blockId);
           const block = data.blocks[blockId];
-          const activeColor = (mode === 'color-coded' && block && block.color) ? block.color : '#60a5fa';
+          const activeColor = (mode !== '' && block && block.color) ? block.color : '#60a5fa';
 
           const rect = el.querySelector('rect');
           if (rect) {
@@ -4660,40 +4706,32 @@
              rect.setAttribute('stroke', darkenColor(activeColor, 0.2));
           }
 
-          el.querySelectorAll('text').forEach(text => {
-             text.setAttribute('fill', getContrastColor(activeColor));
+          el.querySelectorAll('text, tspan').forEach(textNode => {
+             textNode.setAttribute('fill', getContrastColor(activeColor));
           });
           
-          // Also handle tspans for multi-line text
-          el.querySelectorAll('tspan').forEach(tspan => {
-             tspan.setAttribute('fill', getContrastColor(activeColor));
-          });
+          if (isHighlightMode) {
+             if (highlightedBlocks.has(blockId)) {
+                el.classList.add('highlight-target');
+                el.style.opacity = '1';
+             } else {
+                el.style.opacity = '0.35';
+             }
+          } else {
+             el.style.opacity = '1';
+          }
         });
 
         // Update staging blocks too
         document.querySelectorAll('.staged-block').forEach(el => {
-          const blockId = el.dataset.blockId;
+          const blockId = parseInt(el.dataset.blockId);
           const block = data.blocks[blockId];
-          const activeColor = (mode === 'color-coded' && block && block.color) ? block.color : '#60a5fa';
+          const activeColor = (mode !== '' && block && block.color) ? block.color : '#60a5fa';
           
           el.style.backgroundColor = activeColor;
           el.style.borderColor = darkenColor(activeColor, 0.2);
           el.style.color = getContrastColor(activeColor);
         });
-
-        if (mode === 'color-coded') return; // Handled above for all
-
-        // 2. Add highlight if resource selected
-        if (mode && data.resources[mode]) {
-          const res = data.resources[mode];
-          res.links.forEach(l => {
-            if (l.type === 'MUST') {
-              document.querySelectorAll(`.schedule-block[data-block-id="${l.block}"]`).forEach(el => {
-                el.classList.add('highlight-target');
-              });
-            }
-          });
-        }
       }
 
       highlightSelect.addEventListener('change', applyHighlight);
