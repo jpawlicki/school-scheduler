@@ -571,10 +571,7 @@
         break-after: page;
         page-break-inside: avoid;
         break-inside: avoid;
-        padding: 15mm !important;
         margin: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
         box-shadow: none !important;
         border: none !important;
       }
@@ -861,6 +858,11 @@
       </div>
 
       <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Show Title</label>
+        <input type="checkbox" id="settingPrintShowTitleInput" style="width: auto;" checked>
+      </div>
+
+      <div style="margin-bottom: 15px;">
         <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Print Subtitle</label>
         <input type="text" id="settingPrintSubtitleInput" class="editor-input" placeholder="e.g., 2026-2027 School Year">
       </div>
@@ -881,8 +883,17 @@
       </div>
 
       <div style="margin-bottom: 15px;">
-        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Show Time Bar</label>
-        <input type="checkbox" id="settingPrintShowTimeBarInput" style="width: auto;" checked>
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Time Bar</label>
+        <select id="settingPrintShowTimeBarInput" class="editor-input">
+          <option value="hourly">Hourly</option>
+          <option value="block">Block</option>
+          <option value="hidden">Hidden</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 5px;">Vertical Text for Tall Blocks</label>
+        <input type="checkbox" id="settingPrintVerticalTallBlocksInput" style="width: auto;">
       </div>
 
       <div style="margin-bottom: 15px;">
@@ -937,9 +948,16 @@
       views: {},
       printColorMode: 'color',
       timeFormat: '24h',
+      printShowTitle: true,
       printSubtitle: '',
       printTimesInBlock: false,
-      printPeopleTypesInBlock: ''
+      printPeopleTypesInBlock: '',
+      printTimeBarMode: 'hourly',
+      printHiddenDays: [],
+      printVerticalTallBlocks: false,
+      printPageWidth: '210mm',
+      printPageHeight: '297mm',
+      printPageSelection: {}
     };
 
     // For debugging purposes.
@@ -2069,9 +2087,16 @@
         snapInterval: loadedData.snapInterval || 10,
         printColorMode: loadedData.printColorMode || 'color',
         timeFormat: loadedData.timeFormat || '24h',
+        printShowTitle: loadedData.printShowTitle !== undefined ? loadedData.printShowTitle : true,
         printSubtitle: loadedData.printSubtitle || '',
         printTimesInBlock: loadedData.printTimesInBlock || false,
         printPeopleTypesInBlock: loadedData.printPeopleTypesInBlock || '',
+        printTimeBarMode: loadedData.printTimeBarMode || 'hourly',
+        printHiddenDays: loadedData.printHiddenDays || [],
+        printVerticalTallBlocks: loadedData.printVerticalTallBlocks || false,
+        printPageWidth: loadedData.printPageWidth || '210mm',
+        printPageHeight: loadedData.printPageHeight || '297mm',
+        printPageSelection: loadedData.printPageSelection || {},
         blocks: newBlocks,
         resources: newResources,
         views: newViews
@@ -2795,15 +2820,35 @@
         return (data.endHour - data.startHour) * 60 * data.pixelsPerMinute;
       }
 
-      function drawGrid(containerWidth, targetSvg, targetGroup, isPrint = false) {
+      function drawGrid(containerWidth, targetSvg, targetGroup, isPrint = false, filterFunc = null) {
         targetGroup.innerHTML = '';
 
         if (containerWidth === 0) return;
 
+        let timeBarMode = 'hourly';
         let TIME_LABEL_WIDTH = 40;
         if (isPrint) {
           const tbInput = document.getElementById('settingPrintShowTimeBarInput');
-          if (tbInput && !tbInput.checked) TIME_LABEL_WIDTH = 0;
+          if (tbInput) timeBarMode = tbInput.value;
+          if (timeBarMode === 'hidden') TIME_LABEL_WIDTH = 0;
+          else if (timeBarMode === 'block') TIME_LABEL_WIDTH = 53;
+        }
+
+        let uniqueTimes = {};
+        if (timeBarMode === 'block') {
+           Object.entries(data.blocks).forEach(([id, b]) => {
+              const blockId = parseInt(id);
+              if (filterFunc && !filterFunc(blockId)) return;
+              b.slots.forEach(slot => {
+                 if (isPrint && data.printHiddenDays && data.printHiddenDays.includes(slot.day)) return;
+                 const start = slot.time;
+                 const end = slot.time + b.duration;
+                 if (!uniqueTimes[start]) uniqueTimes[start] = 'start';
+                 else if (uniqueTimes[start] === 'end') uniqueTimes[start] = 'both';
+                 if (!uniqueTimes[end]) uniqueTimes[end] = 'end';
+                 else if (uniqueTimes[end] === 'start') uniqueTimes[end] = 'both';
+              });
+           });
         }
         const visibleHeight = getVisibleHeight();
         // Only set width/height attributes if not already handling via viewBox in print
@@ -2846,46 +2891,88 @@
         }
 
         // Draw Time Rows
-        for (let h = Math.floor(data.startHour); h <= Math.ceil(data.endHour); h++) {
-          const y = (h - data.startHour) * 60 * data.pixelsPerMinute;
+        if (timeBarMode === 'hourly' || !isPrint) {
+          for (let h = Math.floor(data.startHour); h <= Math.ceil(data.endHour); h++) {
+            const y = (h - data.startHour) * 60 * data.pixelsPerMinute;
 
-          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute('x1', 0);
-          line.setAttribute('y1', y);
-          line.setAttribute('x2', containerWidth);
-          line.setAttribute('y2', y);
-          line.setAttribute('stroke', '#d1d5db');
-          line.setAttribute('stroke-width', '1');
-          targetGroup.appendChild(line);
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute('x1', 0);
+            line.setAttribute('y1', y);
+            line.setAttribute('x2', containerWidth);
+            line.setAttribute('y2', y);
+            line.setAttribute('stroke', '#d1d5db');
+            line.setAttribute('stroke-width', '1');
+            targetGroup.appendChild(line);
 
-          if (TIME_LABEL_WIDTH > 0) {
-            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute('x', 5);
-            text.setAttribute('y', y);
-            text.setAttribute('dominant-baseline', 'middle');
-            text.setAttribute('font-size', '11');
-            text.setAttribute('font-weight', '500');
-            text.setAttribute('fill', '#6b7280');
-            text.setAttribute('stroke', 'white');
-            text.setAttribute('stroke-width', '3');
-            text.setAttribute('paint-order', 'stroke');
-            text.textContent = formatTime(h);
-            targetGroup.appendChild(text);
-          }
+            if (TIME_LABEL_WIDTH > 0) {
+              const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+              text.setAttribute('x', 5);
+              text.setAttribute('y', y);
+              text.setAttribute('dominant-baseline', 'middle');
+              text.setAttribute('font-size', '11');
+              text.setAttribute('font-weight', '500');
+              text.setAttribute('fill', '#6b7280');
+              text.setAttribute('stroke', 'white');
+              text.setAttribute('stroke-width', '3');
+              text.setAttribute('paint-order', 'stroke');
+              text.textContent = formatTime(h);
+              targetGroup.appendChild(text);
+            }
 
-          if (h < data.endHour) {
-            for (let m = data.snapInterval; m < 60; m += data.snapInterval) {
-              const ym = y + (m * data.pixelsPerMinute);
-              const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-              minLine.setAttribute('x1', TIME_LABEL_WIDTH);
-              minLine.setAttribute('y1', ym);
-              minLine.setAttribute('x2', containerWidth);
-              minLine.setAttribute('y2', ym);
-              minLine.setAttribute('stroke', '#f3f4f6');
-              minLine.setAttribute('stroke-width', '1');
-              targetGroup.appendChild(minLine);
+            if (h < data.endHour) {
+              for (let m = data.snapInterval; m < 60; m += data.snapInterval) {
+                const ym = y + (m * data.pixelsPerMinute);
+                const minLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                minLine.setAttribute('x1', TIME_LABEL_WIDTH);
+                minLine.setAttribute('y1', ym);
+                minLine.setAttribute('x2', containerWidth);
+                minLine.setAttribute('y2', ym);
+                minLine.setAttribute('stroke', '#f3f4f6');
+                minLine.setAttribute('stroke-width', '1');
+                targetGroup.appendChild(minLine);
+              }
             }
           }
+        } else if (timeBarMode === 'block') {
+          const times = Object.keys(uniqueTimes).map(Number).sort((a, b) => a - b);
+          times.forEach(t => {
+            const y = ((t / 3600) - data.startHour) * 60 * data.pixelsPerMinute;
+            const type = uniqueTimes[t];
+
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute('x1', 0);
+            line.setAttribute('y1', y);
+            line.setAttribute('x2', containerWidth);
+            line.setAttribute('y2', y);
+            line.setAttribute('stroke', '#d1d5db');
+            line.setAttribute('stroke-width', '1');
+            targetGroup.appendChild(line);
+
+            if (TIME_LABEL_WIDTH > 0) {
+              const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+              text.setAttribute('x', 5);
+              
+              if (type === 'start') {
+                text.setAttribute('y', y + 3);
+                text.setAttribute('dominant-baseline', 'hanging');
+              } else if (type === 'end') {
+                text.setAttribute('y', y - 3);
+                text.setAttribute('dominant-baseline', 'alphabetic');
+              } else {
+                text.setAttribute('y', y);
+                text.setAttribute('dominant-baseline', 'middle');
+              }
+              
+              text.setAttribute('font-size', '11');
+              text.setAttribute('font-weight', '500');
+              text.setAttribute('fill', '#6b7280');
+              text.setAttribute('stroke', 'white');
+              text.setAttribute('stroke-width', '3');
+              text.setAttribute('paint-order', 'stroke');
+              text.textContent = formatTime(t / 3600);
+              targetGroup.appendChild(text);
+            }
+          });
         }
       }
 
@@ -3172,7 +3259,8 @@
         let TIME_LABEL_WIDTH = 40;
         if (!isInteractive) {
           const tbInput = document.getElementById('settingPrintShowTimeBarInput');
-          if (tbInput && !tbInput.checked) TIME_LABEL_WIDTH = 0;
+          if (tbInput && tbInput.value === 'hidden') TIME_LABEL_WIDTH = 0;
+          else if (tbInput && tbInput.value === 'block') TIME_LABEL_WIDTH = 53;
         }
         let visibleDays = [];
         if (!data.printHiddenDays) data.printHiddenDays = [];
@@ -3366,9 +3454,15 @@
               
               svgHTML += `<title>${escapeHTML(title)} (${escapeHTML(timeLabelStr)})</title>`;
 
+              let isVertical = false;
+              if (!isInteractive && data.printVerticalTallBlocks && h > rectWidth) {
+                isVertical = true;
+              }
+
+              let textAvailWidth = isVertical ? (h - 8) : (rectWidth - 4);
               const charWidth = fontSize * 0.55;
-              if (title.length * charWidth > availWidth) {
-                const maxChars = Math.floor(availWidth / charWidth);
+              if (title.length * charWidth > textAvailWidth) {
+                const maxChars = Math.floor(textAvailWidth / charWidth);
                 displayText = title.substring(0, Math.max(0, maxChars));
               }
 
@@ -3376,33 +3470,49 @@
               const showPeople = peopleList !== '';
               
               const textX = colX + (dayWidth / numCols) / 2;
-              let textY = y + (h / 2);
+              const centerY = y + (h / 2);
+              let textY = centerY;
 
-              if ((printTimes || showPeople) && h >= 25) {
-                const lineCount = 1 + (showPeople ? 1 : 0) + (printTimes ? 1 : 0);
+              let transformAttr = isVertical ? `transform="rotate(-90, ${textX}, ${centerY})"` : '';
+
+              const canShowMultipleLines = isVertical ? (rectWidth >= 25) : (h >= 25);
+
+              if (showPeople && canShowMultipleLines) {
+                const lineCount = 2;
                 const lineSpacing = fontSize + 2;
                 const totalTextHeight = lineCount * lineSpacing;
-                textY = y + (h / 2) - (totalTextHeight / 2) + (fontSize / 2);
+                textY = centerY - (totalTextHeight / 2) + (fontSize / 2);
                 
-                svgHTML += `<text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">`;
+                svgHTML += `<text x="${textX}" y="${textY}" ${transformAttr} text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">`;
                 svgHTML += `<tspan x="${textX}">${escapeHTML(displayText)}</tspan>`;
                 
-                if (showPeople) {
-                  let pText = peopleList;
-                  const pCharWidth = Math.max(7, fontSize - 2) * 0.55;
-                  if (pText.length * pCharWidth > availWidth) {
-                    const maxPChars = Math.floor(availWidth / pCharWidth);
-                    pText = pText.substring(0, Math.max(0, maxPChars));
-                  }
-                  svgHTML += `<tspan x="${textX}" dy="${lineSpacing}" font-size="${Math.max(7, fontSize - 2)}" font-weight="normal">${escapeHTML(pText)}</tspan>`;
+                let pText = peopleList;
+                const pCharWidth = Math.max(7, fontSize - 2) * 0.55;
+                if (pText.length * pCharWidth > textAvailWidth) {
+                  const maxPChars = Math.floor(textAvailWidth / pCharWidth);
+                  pText = pText.substring(0, Math.max(0, maxPChars));
                 }
-                
-                if (printTimes) {
-                  svgHTML += `<tspan x="${textX}" dy="${lineSpacing}" font-size="${Math.max(7, fontSize - 2)}" font-weight="normal">${escapeHTML(timeLabelStr)}</tspan>`;
-                }
+                svgHTML += `<tspan x="${textX}" dy="${lineSpacing}" font-size="${Math.max(7, fontSize - 2)}" font-weight="normal">${escapeHTML(pText)}</tspan>`;
                 svgHTML += `</text>`;
               } else {
-                svgHTML += `<text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">${escapeHTML(displayText)}</text>`;
+                svgHTML += `<text x="${textX}" y="${textY}" ${transformAttr} text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="${textColor}" style="pointer-events: none;">${escapeHTML(displayText)}</text>`;
+              }
+
+              if (printTimes && h >= 15) {
+                const cornerFontSize = Math.max(7, fontSize - 2);
+                const startStr = formatTime(t1);
+                const endStr = formatTime(t2);
+                
+                const startX = colX + 5;
+                const startY = y + cornerFontSize + 2;
+                
+                const endX = colX + rectWidth - 3;
+                const endY = y + h - 4;
+                
+                svgHTML += `<text x="${startX}" y="${startY}" text-anchor="start" font-size="${cornerFontSize}" fill="${textColor}" opacity="0.9" font-weight="500" style="pointer-events: none;">${escapeHTML(startStr)}</text>`;
+                if (h >= 25) {
+                  svgHTML += `<text x="${endX}" y="${endY}" text-anchor="end" font-size="${cornerFontSize}" fill="${textColor}" opacity="0.9" font-weight="500" style="pointer-events: none;">${escapeHTML(endStr)}</text>`;
+                }
               }
               
               svgHTML += `</g>`;
@@ -3471,11 +3581,12 @@
           const mode = opt.value;
           const label = opt.textContent;
           const titleText = label === "None" ? "Full Schedule" : `Schedule: ${label}`;
+          const printTitleText = label === "None" ? "Full Schedule" : label;
           const filterFunc = (blockId) => {
             if (mode === "" || mode === "color-coded") return true;
             return data.resources[mode].links.some(l => l.block === blockId && l.type === 'MUST');
           };
-          pages.push({ titleText, filterFunc });
+          pages.push({ titleText, printTitleText, filterFunc });
         });
 
         const sortedViewKeys = Object.keys(data.views).sort((a, b) => {
@@ -3484,18 +3595,21 @@
         sortedViewKeys.forEach(id => {
           const view = data.views[id];
           const titleText = `View: ${view.name}`;
+          const printTitleText = view.name;
           const filterFunc = (blockId) => {
             return view.blockIds.includes(blockId);
           };
-          pages.push({ titleText, filterFunc });
+          pages.push({ titleText, printTitleText, filterFunc });
         });
 
         window._currentPrintPages = pages;
 
+        if (!data.printPageSelection) data.printPageSelection = {};
+
         // 2. Render checkboxes
         pages.forEach((pageDef, index) => {
-          if (printPageSelection[pageDef.titleText] === undefined) {
-             printPageSelection[pageDef.titleText] = true;
+          if (data.printPageSelection[pageDef.titleText] === undefined) {
+             data.printPageSelection[pageDef.titleText] = true;
           }
           
           const wrapper = document.createElement('div');
@@ -3506,11 +3620,12 @@
           const cb = document.createElement('input');
           cb.type = 'checkbox';
           cb.id = `print_cb_${index}`;
-          cb.checked = printPageSelection[pageDef.titleText];
+          cb.checked = data.printPageSelection[pageDef.titleText];
           cb.style.marginRight = '5px';
           
           cb.addEventListener('change', (e) => {
-             printPageSelection[pageDef.titleText] = e.target.checked;
+             data.printPageSelection[pageDef.titleText] = e.target.checked;
+             dataModified();
              updatePrintPagesVisibility(pages);
           });
 
@@ -3530,10 +3645,11 @@
           toggleAllCb.onchange = (e) => {
             const checked = e.target.checked;
             pages.forEach((pageDef, index) => {
-               printPageSelection[pageDef.titleText] = checked;
+               data.printPageSelection[pageDef.titleText] = checked;
                const cb = document.getElementById(`print_cb_${index}`);
                if (cb) cb.checked = checked;
             });
+            dataModified();
             updatePrintPagesVisibility(pages);
           };
         }
@@ -3544,51 +3660,96 @@
       function updatePrintPagesVisibility(pages) {
          const printContent = document.getElementById('printContent');
          if (!printContent) return;
+         
          printContent.innerHTML = '';
-         pages.forEach(pageDef => {
-            if (printPageSelection[pageDef.titleText]) {
-               createPrintPage(pageDef.titleText, pageDef.filterFunc);
+         
+         pages.forEach((pageDef) => {
+            if (data.printPageSelection[pageDef.titleText] !== false) {
+               createPrintPage(pageDef.printTitleText, pageDef.filterFunc);
             }
          });
       }
 
       function createPrintPage(titleText, filterFunc) {
-        // 1. Create Page
+        // 1. Calculate Trimmed Start/End Hour based on blocks on this page
+        let trimStartH = 24;
+        let trimEndH = 0;
+        let hasBlocks = false;
+        
+        Object.entries(data.blocks).forEach(([id, b]) => {
+           const blockId = parseInt(id);
+           if (filterFunc && !filterFunc(blockId)) return;
+           b.slots.forEach(slot => {
+              if (data.printHiddenDays.includes(slot.day)) return;
+              const sH = slot.time / 3600;
+              const eH = (slot.time + b.duration) / 3600;
+              if (sH < trimStartH) trimStartH = sH;
+              if (eH > trimEndH) trimEndH = eH;
+              hasBlocks = true;
+           });
+        });
+
+        if (!hasBlocks) {
+           trimStartH = data.startHour;
+           trimEndH = data.endHour;
+        } else {
+           if (trimStartH < data.startHour) trimStartH = data.startHour;
+           if (trimEndH > data.endHour) trimEndH = data.endHour;
+        }
+
+        // We temporarily override global startHour and endHour so renderBlocksTo and drawGrid use them
+        const origStartH = data.startHour;
+        const origEndH = data.endHour;
+        const origPPM = data.pixelsPerMinute;
+
+        data.startHour = trimStartH;
+        data.endHour = trimEndH;
+
+        // 2. Create Page
         const page = document.createElement('div');
         page.className = 'print-page';
+        page.style.display = 'flex';
+        page.style.flexDirection = 'column';
 
-        // 2. Header
-        const header = document.createElement('div');
-        header.className = 'print-header';
-        header.style.width = '100%';
-        const title = document.createElement('h1');
-        title.textContent = titleText;
-        header.appendChild(title);
-        const subtitle = document.createElement('div');
-        subtitle.className = 'subtitle';
-        subtitle.textContent = data.printSubtitle || '';
-        header.appendChild(subtitle);
-        page.appendChild(header);
+        // 3. Header
+        if (data.printShowTitle !== false) {
+          const header = document.createElement('div');
+          header.className = 'print-header';
+          header.style.width = '100%';
+          header.style.flexShrink = '0';
+          const title = document.createElement('h1');
+          title.textContent = titleText;
+          header.appendChild(title);
+          const subtitle = document.createElement('div');
+          subtitle.className = 'subtitle';
+          subtitle.textContent = data.printSubtitle || '';
+          header.appendChild(subtitle);
+          page.appendChild(header);
+        }
 
-        // 3. Grid Container
+        // 4. Grid Container
         const gridWrapper = document.createElement('div');
         gridWrapper.style.width = '100%';
         gridWrapper.style.position = 'relative';
+        gridWrapper.style.flexGrow = '1';
+        gridWrapper.style.display = 'flex';
+        gridWrapper.style.flexDirection = 'column';
+        gridWrapper.style.pageBreakInside = 'avoid';
+        gridWrapper.style.breakInside = 'avoid';
 
         const headerRow = document.createElement('div');
         headerRow.className = 'day-header-row';
+        headerRow.style.flexShrink = '0';
+        headerRow.style.pageBreakInside = 'avoid';
+        headerRow.style.breakInside = 'avoid';
         gridWrapper.appendChild(headerRow);
 
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.style.width = '100%';
         svg.style.display = 'block';
-
-        // Virtual dimensions for responsiveness
-        const virtualWidth = 1000;
-        const totalHeight = (data.endHour - data.startHour) * 60 * data.pixelsPerMinute;
-        svg.setAttribute('viewBox', `0 0 ${virtualWidth} ${totalHeight}`);
-        svg.setAttribute('preserveAspectRatio', 'xMidYMin meet');
-        svg.style.height = 'auto';
+        svg.style.flexGrow = '1';
+        svg.style.pageBreakInside = 'avoid';
+        svg.style.breakInside = 'avoid';
 
         // Add defs with stripedPattern to each SVG to ensure locked icons show in print
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
@@ -3618,14 +3779,31 @@
         page.appendChild(gridWrapper);
         document.getElementById('printContent').appendChild(page);
 
-        // 4. Draw Content
+        // Now that the page is in the DOM, compute available height
+        const availableWidth = svg.clientWidth || 1000;
+        const availableHeight = Math.max(svg.clientHeight, 100); // Ensure it's not 0
+        
+        const virtualWidth = 1000;
+        const virtualHeight = 1000 * (availableHeight / availableWidth);
+
+        let totalMinutes = (trimEndH - trimStartH) * 60;
+        if (totalMinutes <= 0) totalMinutes = 60;
+        // Compute new pixelsPerMinute to stretch timeline vertically to fill the SVG area exactly
+        data.pixelsPerMinute = virtualHeight / totalMinutes;
+
+        svg.setAttribute('viewBox', `0 0 ${virtualWidth} ${virtualHeight}`);
+        svg.setAttribute('preserveAspectRatio', 'none'); // xMidYMin meet could leave gaps if measuring is slightly off, none forces it
+
+        // 5. Draw Content
         headerRow.style.width = '100%';
 
         const numDays = data.days;
         let TIME_LABEL_WIDTH = 40;
         const tbInput = document.getElementById('settingPrintShowTimeBarInput');
-        if (tbInput && !tbInput.checked) {
+        if (tbInput && tbInput.value === 'hidden') {
           TIME_LABEL_WIDTH = 0;
+        } else if (tbInput && tbInput.value === 'block') {
+          TIME_LABEL_WIDTH = 53;
         }
 
         if (TIME_LABEL_WIDTH > 0) {
@@ -3644,8 +3822,13 @@
           headerRow.appendChild(div);
         }
 
-        drawGrid(virtualWidth, svg, gridG, true);
+        drawGrid(virtualWidth, svg, gridG, true, filterFunc);
         renderBlocksTo(blockG, virtualWidth, filterFunc, false);
+
+        // Restore globals
+        data.startHour = origStartH;
+        data.endHour = origEndH;
+        data.pixelsPerMinute = origPPM;
       }
 
       function renderStagedBlocks(stagedSlots) {
@@ -4181,6 +4364,9 @@
         if (document.getElementById('settingPixelsPerMinuteInput')) {
           document.getElementById('settingPixelsPerMinuteInput').value = data.pixelsPerMinute;
         }
+        if (document.getElementById('settingPrintShowTimeBarInput')) {
+          document.getElementById('settingPrintShowTimeBarInput').value = data.printTimeBarMode || 'hourly';
+        }
         if (document.getElementById('settingSnapIntervalInput')) {
           document.getElementById('settingSnapIntervalInput').value = data.snapInterval;
         }
@@ -4190,6 +4376,9 @@
         if (document.getElementById('settingTimeFormatInput')) {
           document.getElementById('settingTimeFormatInput').value = data.timeFormat || '24h';
         }
+        if (document.getElementById('settingPrintShowTitleInput')) {
+          document.getElementById('settingPrintShowTitleInput').checked = data.printShowTitle !== false;
+        }
         if (document.getElementById('settingPrintSubtitleInput')) {
           document.getElementById('settingPrintSubtitleInput').value = data.printSubtitle || '';
         }
@@ -4198,6 +4387,9 @@
         }
         if (document.getElementById('settingPrintPeopleTypesInBlockInput')) {
           document.getElementById('settingPrintPeopleTypesInBlockInput').value = data.printPeopleTypesInBlock || '';
+        }
+        if (document.getElementById('settingPrintVerticalTallBlocksInput')) {
+          document.getElementById('settingPrintVerticalTallBlocksInput').checked = data.printVerticalTallBlocks || false;
         }
         if (document.getElementById('settingPrintPageWidthInput')) {
           document.getElementById('settingPrintPageWidthInput').value = data.printPageWidth || '210mm';
@@ -4295,6 +4487,12 @@
         dataModified();
       });
 
+      document.getElementById('settingPrintShowTitleInput').addEventListener('change', (e) => {
+        data.printShowTitle = e.target.checked;
+        refreshVisibleViews();
+        dataModified();
+      });
+
       document.getElementById('settingPrintSubtitleInput').addEventListener('input', (e) => {
         data.printSubtitle = e.target.value;
         refreshVisibleViews();
@@ -4309,6 +4507,12 @@
 
       document.getElementById('settingPrintPeopleTypesInBlockInput').addEventListener('input', (e) => {
         data.printPeopleTypesInBlock = e.target.value;
+        refreshVisibleViews();
+        dataModified();
+      });
+
+      document.getElementById('settingPrintVerticalTallBlocksInput').addEventListener('change', (e) => {
+        data.printVerticalTallBlocks = e.target.checked;
         refreshVisibleViews();
         dataModified();
       });
@@ -4333,7 +4537,22 @@
         
         styleTag.innerHTML = `
           @page { size: ${width} ${height}; margin: 0; }
-          .print-page { width: ${width}; min-height: ${height}; }
+          .print-page { 
+            width: ${width} !important; 
+            height: ${height} !important; 
+            max-height: ${height} !important;
+            min-height: ${height} !important;
+            padding: 40px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+          }
+          @media print {
+            .print-page {
+               padding: 40px !important;
+               height: ${height} !important;
+               max-height: ${height} !important;
+            }
+          }
         `;
         dataModified();
       }
@@ -4351,7 +4570,13 @@
       }
 
       const tbInput = document.getElementById('settingPrintShowTimeBarInput');
-      if (tbInput) tbInput.addEventListener('change', refreshVisibleViews);
+      if (tbInput) {
+        tbInput.addEventListener('change', (e) => {
+          data.printTimeBarMode = e.target.value;
+          refreshVisibleViews();
+          dataModified();
+        });
+      }
 
       function refreshVisibleViews() {
         if (document.getElementById('scheduler').style.display !== 'none') {
@@ -4650,6 +4875,7 @@
             blockTableBody.innerHTML = '';
             loadData(loadedData, onNewBlock, onNewResource);
             updateSettingsView();
+            updateHighlightDropdown();
             updateViewSelectDropdown();
             renderGrid();
             renderBlocks();
